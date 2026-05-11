@@ -1,0 +1,12 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: marketing-agent
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
