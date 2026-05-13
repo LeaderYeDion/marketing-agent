@@ -18,7 +18,7 @@ public record ConversationMessage(
     }
 
     public static ConversationMessage assistant(String content, String source, String eventType,
-                                                Map<String, Object> metadata) {
+                                                 Map<String, Object> metadata) {
         return new ConversationMessage(MessageRole.ASSISTANT, content, source, eventType, true,
                 metadata == null ? Map.of() : Map.copyOf(metadata), Instant.now());
     }

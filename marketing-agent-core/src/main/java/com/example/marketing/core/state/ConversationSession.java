@@ -5,12 +5,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.example.marketing.core.model.ContextSummary;
 import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.VisibleObject;
 
 public class ConversationSession {
     private final String conversationId;
     private final List<ConversationMessage> messages = new ArrayList<>();
+    private final List<ContextSummary> handoffSummaries = new ArrayList<>();
     private final Map<String, VisibleObject> visibleObjects = new LinkedHashMap<>();
     private final Map<String, Map<String, Object>> pendingActions = new LinkedHashMap<>();
     private final Map<String, Object> state = new LinkedHashMap<>();
@@ -27,6 +29,10 @@ public class ConversationSession {
         return messages;
     }
 
+    public List<ContextSummary> handoffSummaries() {
+        return handoffSummaries;
+    }
+
     public Map<String, VisibleObject> visibleObjects() {
         return visibleObjects;
     }
@@ -41,6 +47,10 @@ public class ConversationSession {
 
     public void addMessage(ConversationMessage message) {
         messages.add(message);
+    }
+
+    public void addHandoffSummary(ContextSummary summary) {
+        handoffSummaries.add(summary);
     }
 
     public void addVisibleObject(VisibleObject visibleObject) {

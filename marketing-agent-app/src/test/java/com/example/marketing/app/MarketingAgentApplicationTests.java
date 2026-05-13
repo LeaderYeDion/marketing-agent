@@ -48,7 +48,7 @@ class MarketingAgentApplicationTests {
         @Primary
         LlmClient stubLlmClient() {
             return (systemMessage, messages) -> {
-                if (systemMessage.contains("主控 agent")) {
+                if (systemMessage.contains("\"action\"") && systemMessage.contains("\"delegate_to\"")) {
                     return """
                             {
                               "action": "delegate",
@@ -60,7 +60,7 @@ class MarketingAgentApplicationTests {
                             }
                             """;
                 }
-                if (systemMessage.contains("营销规则问答子 agent")) {
+                if (systemMessage.contains("agent")) {
                     return "基于知识库，活动报名通常需要确认活动 ID、报名对象、优惠规则和生效条件。";
                 }
                 return "已完成。";

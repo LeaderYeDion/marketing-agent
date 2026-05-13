@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.api.MarketingResponse;
 import com.example.marketing.core.context.MarketingAgentContext;
+import com.example.marketing.core.model.ContextSummary;
 import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.SubAgentInvocation;
 import com.example.marketing.core.model.SubAgentResult;
@@ -35,8 +36,8 @@ public class AgentOrchestrator {
     public MarketingResponse run(MarketingRequest request) {
         ConversationSession session = conversationStore.getOrCreate(request.conversationId());
         String query = request.query() == null ? "" : request.query();
-        session.addMessage(ConversationMessage.user(query, Map.of("variables", request.variables())));
         MainAgentDecision decision = mainAgent.decide(session, query, request.variables());
+        session.addMessage(ConversationMessage.user(query, Map.of("variables", request.variables())));
         if ("direct_reply".equals(decision.action()) || "ask_user".equals(decision.action())) {
             String answer = decision.reply().isBlank() ? "我需要更多信息才能继续处理。" : decision.reply();
             session.addMessage(ConversationMessage.assistant(answer, "main_agent", decision.action(), Map.of()));
@@ -71,6 +72,10 @@ public class AgentOrchestrator {
     }
 
     private void commit(ConversationSession session, SubAgentResult result) {
+        if (result.mainContextSummary() != null && !result.mainContextSummary().isBlank()) {
+            session.addHandoffSummary(ContextSummary.of("sub_agent", result.invocationId(), result.status(),
+                    result.mainContextSummary(), Map.of()));
+        }
         result.messagesToCommit().forEach(session::addMessage);
         result.visibleObjects().forEach(object -> {
             session.addVisibleObject(object);
