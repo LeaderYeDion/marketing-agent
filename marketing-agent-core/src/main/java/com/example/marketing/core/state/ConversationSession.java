@@ -7,6 +7,8 @@ import java.util.Map;
 
 import com.example.marketing.core.model.ContextSummary;
 import com.example.marketing.core.model.ConversationMessage;
+import com.example.marketing.core.model.PendingAction;
+import com.example.marketing.core.model.PendingActionStatus;
 import com.example.marketing.core.model.VisibleObject;
 
 public class ConversationSession {
@@ -14,7 +16,7 @@ public class ConversationSession {
     private final List<ConversationMessage> messages = new ArrayList<>();
     private final List<ContextSummary> handoffSummaries = new ArrayList<>();
     private final Map<String, VisibleObject> visibleObjects = new LinkedHashMap<>();
-    private final Map<String, Map<String, Object>> pendingActions = new LinkedHashMap<>();
+    private final Map<String, PendingAction> pendingActions = new LinkedHashMap<>();
     private final Map<String, Object> state = new LinkedHashMap<>();
 
     public ConversationSession(String conversationId) {
@@ -37,7 +39,7 @@ public class ConversationSession {
         return visibleObjects;
     }
 
-    public Map<String, Map<String, Object>> pendingActions() {
+    public Map<String, PendingAction> pendingActions() {
         return pendingActions;
     }
 
@@ -57,7 +59,39 @@ public class ConversationSession {
         visibleObjects.put(visibleObject.id(), visibleObject);
     }
 
-    public void addPendingAction(String id, Map<String, Object> action) {
-        pendingActions.put(id, new LinkedHashMap<>(action));
+    public void updateVisibleObjectStatus(String id, String status) {
+        VisibleObject object = visibleObjects.get(id);
+        if (object != null) {
+            visibleObjects.put(id, new VisibleObject(object.id(), object.type(), object.title(), status,
+                    object.summary(), object.data(), object.createdAt()));
+        }
+    }
+
+    public void addPendingAction(PendingAction action) {
+        pendingActions.put(action.id(), action);
+    }
+
+    public java.util.Optional<PendingAction> findPendingAction(String pendingActionId, String visibleObjectId) {
+        if (pendingActionId != null && !pendingActionId.isBlank()) {
+            PendingAction action = pendingActions.get(pendingActionId);
+            return action == null ? java.util.Optional.empty() : java.util.Optional.of(action);
+        }
+        if (visibleObjectId != null && !visibleObjectId.isBlank()) {
+            return pendingActions.values().stream()
+                    .filter(action -> visibleObjectId.equals(action.visibleObjectId()))
+                    .findFirst();
+        }
+        return java.util.Optional.empty();
+    }
+
+    public void updatePendingAction(PendingAction action) {
+        pendingActions.put(action.id(), action);
+    }
+
+    public List<String> activePendingActionIds() {
+        return pendingActions.values().stream()
+                .filter(action -> PendingActionStatus.PENDING.equals(action.status()))
+                .map(PendingAction::id)
+                .toList();
     }
 }

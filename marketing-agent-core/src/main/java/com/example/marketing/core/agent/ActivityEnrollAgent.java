@@ -8,6 +8,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.core.llm.LlmClient;
 import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.SubAgentInvocation;
@@ -17,7 +18,7 @@ import com.example.marketing.core.model.VisibleObject;
 import com.example.marketing.core.tool.FileTools;
 
 @Service
-public class ActivityEnrollAgent {
+public class ActivityEnrollAgent implements SubAgent {
     private final FileTools fileTools;
     private final LlmClient llmClient;
 
@@ -26,12 +27,26 @@ public class ActivityEnrollAgent {
         this.llmClient = llmClient;
     }
 
-    public SubAgentResult run(SubAgentInvocation invocation) {
+    @Override
+    public String name() {
+        return "activity_enroll_agent";
+    }
+
+    @Override
+    public SubAgentResult run(SubAgentInvocation invocation, MarketingRequest request) {
         SubAgentEventSink sink = new SubAgentEventSink(invocation.conversationId(), invocation.invocationId(),
                 "activity_enroll_agent");
         String excelPath = stringInput(invocation, "excel_file_path");
         String activityId = stringInput(invocation, "activity_id");
         List<ConversationMessage> commits = new ArrayList<>();
+
+        if (excelPath.isBlank() || activityId.isBlank()) {
+            String message = "要报名优惠，我还需要本地 Excel 文件路径和活动 ID。";
+            sink.token(message);
+            commits.add(ConversationMessage.assistant(message, "activity_enroll_agent", "ask_user", Map.of()));
+            return SubAgentResult.failed(invocation.invocationId(), message, message,
+                    Map.of("error_code", "MISSING_INPUT"), commits);
+        }
 
         if (isConfirmed(invocation)) {
             return executeConfirmed(invocation, sink, excelPath, activityId, commits);
@@ -63,6 +78,7 @@ public class ActivityEnrollAgent {
         String cardSummary = "活动 " + activityId + " 的优惠报名确认，文件 " + excelPath + "，识别到约 "
                 + rowCount + " 行数据。";
         Map<String, Object> cardData = new LinkedHashMap<>();
+        cardData.put("source_agent", name());
         cardData.put("activity_id", activityId);
         cardData.put("excel_file_path", excelPath);
         cardData.put("detected_row_count", rowCount);

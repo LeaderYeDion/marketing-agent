@@ -6,6 +6,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
+import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.core.context.MarketingAgentContext;
 import com.example.marketing.core.llm.LlmClient;
 import com.example.marketing.core.model.ConversationMessage;
@@ -15,13 +16,23 @@ import com.example.marketing.core.model.ToolResult;
 import com.example.marketing.core.tool.KnowledgeTools;
 
 @Service
-public class InquiryAgent {
+public class InquiryAgent implements SubAgent {
     private final KnowledgeTools knowledgeTools;
     private final LlmClient llmClient;
 
     public InquiryAgent(KnowledgeTools knowledgeTools, LlmClient llmClient) {
         this.knowledgeTools = knowledgeTools;
         this.llmClient = llmClient;
+    }
+
+    @Override
+    public String name() {
+        return "inquiry_agent";
+    }
+
+    @Override
+    public SubAgentResult run(SubAgentInvocation invocation, MarketingRequest request) {
+        return run(invocation, MarketingAgentContext.from(request));
     }
 
     public SubAgentResult run(SubAgentInvocation invocation, MarketingAgentContext context) {

@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.example.marketing.core.model.PendingAction;
 import org.springframework.stereotype.Service;
 
 import com.example.marketing.core.llm.JsonSupport;
@@ -143,10 +144,14 @@ public class MainAgent {
                 .append(object.id()).append(": ").append(object.type()).append(", ")
                 .append(object.status()).append(", ").append(object.summary()).append("\n"));
         builder.append("\n待确认动作：\n");
-        if (session.pendingActions().isEmpty()) {
+        List<PendingAction> activePendingActions = session.pendingActions().values()
+                .stream()
+                .filter(PendingAction::isPending)
+                .toList();
+        if (activePendingActions.isEmpty()) {
             builder.append("- 无\n");
         }
-        session.pendingActions().forEach((id, action) -> builder.append("- ").append(id).append(": ")
+        activePendingActions.forEach(action -> builder.append("- ").append(action.id()).append(": ")
                 .append(action).append("\n"));
         appendHandoffSummaries(builder, session);
         builder.append("\n请求变量：").append(variables == null ? Map.of() : variables).append("\n");
