@@ -19,4 +19,9 @@ public class SubAgentRegistry {
     public Optional<SubAgent> find(String name) {
         return Optional.ofNullable(agents.get(name));
     }
+
+    public Map<String, SubAgentCapabilities> capabilities() {
+        return agents.values().stream()
+                .collect(Collectors.toUnmodifiableMap(SubAgent::name, SubAgent::capabilities));
+    }
 }

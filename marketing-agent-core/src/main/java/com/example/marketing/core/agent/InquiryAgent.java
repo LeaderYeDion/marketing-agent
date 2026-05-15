@@ -31,6 +31,11 @@ public class InquiryAgent implements SubAgent {
     }
 
     @Override
+    public SubAgentCapabilities capabilities() {
+        return SubAgentCapabilities.stateless(java.util.Set.of("question"));
+    }
+
+    @Override
     public SubAgentResult run(SubAgentInvocation invocation, MarketingRequest request) {
         return run(invocation, MarketingAgentContext.from(request));
     }

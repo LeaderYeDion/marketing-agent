@@ -15,21 +15,31 @@ import com.example.marketing.core.model.SubAgentInvocation;
 import com.example.marketing.core.model.SubAgentResult;
 import com.example.marketing.core.model.ToolResult;
 import com.example.marketing.core.model.VisibleObject;
+import com.example.marketing.core.operation.OperationRecord;
+import com.example.marketing.core.operation.OperationStatus;
+import com.example.marketing.core.operation.OperationStore;
 import com.example.marketing.core.tool.FileTools;
 
 @Service
 public class ActivityEnrollAgent implements SubAgent {
     private final FileTools fileTools;
     private final LlmClient llmClient;
+    private final OperationStore operationStore;
 
-    public ActivityEnrollAgent(FileTools fileTools, LlmClient llmClient) {
+    public ActivityEnrollAgent(FileTools fileTools, LlmClient llmClient, OperationStore operationStore) {
         this.fileTools = fileTools;
         this.llmClient = llmClient;
+        this.operationStore = operationStore;
     }
 
     @Override
     public String name() {
         return "activity_enroll_agent";
+    }
+
+    @Override
+    public SubAgentCapabilities capabilities() {
+        return SubAgentCapabilities.hitlWithSideEffects(java.util.Set.of("excel_file_path", "activity_id"));
     }
 
     @Override
@@ -111,11 +121,26 @@ public class ActivityEnrollAgent implements SubAgent {
     private SubAgentResult executeConfirmed(SubAgentInvocation invocation, SubAgentEventSink sink, String excelPath,
                                             String activityId, List<ConversationMessage> commits) {
         String operationId = "enroll_" + activityId + "_" + invocation.invocationId();
+        String idempotencyKey = "activity_enroll:" + invocation.conversationId() + ":"
+                + invocation.inputs().getOrDefault("visible_object_id", invocation.invocationId());
+        OperationRecord existing = operationStore.findByIdempotencyKey(idempotencyKey).orElse(null);
+        if (existing != null && OperationStatus.SUCCEEDED.equals(existing.status())) {
+            String repeated = "这次报名已经执行过，操作号：" + existing.operationId();
+            sink.token(repeated);
+            commits.add(ConversationMessage.assistant(repeated, "activity_enroll_agent", "final_answer",
+                    Map.of("operationId", existing.operationId(), "idempotent", true)));
+            return new SubAgentResult(invocation.invocationId(), "succeeded", repeated,
+                    "用户重复确认了已执行的优惠报名，操作号：" + existing.operationId(), Map.of(), List.of(), commits,
+                    Map.of());
+        }
+        OperationRecord running = operationStore.start(operationId, idempotencyKey, "activity_enroll",
+                Map.of("activity_id", activityId, "excel_file_path", excelPath));
         String message = "已根据你的确认执行报名。当前实现生成了幂等操作号 " + operationId
                 + "，后续可在这里接入真实报名接口。";
         sink.token(message);
         commits.add(ConversationMessage.assistant(message, "activity_enroll_agent", "final_answer",
                 Map.of("operationId", operationId)));
+        operationStore.save(running.succeeded(Map.of("operation_id", operationId)));
         Map<String, Object> statePatch = Map.of(
                 "current_task", Map.of("type", "activity_enroll", "status", "succeeded"),
                 "last_operation", Map.of("operation_id", operationId, "activity_id", activityId,

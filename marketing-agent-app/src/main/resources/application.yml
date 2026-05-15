@@ -10,3 +10,22 @@ management:
     web:
       exposure:
         include: health,info
+
+agent:
+  mysql:
+    url: jdbc:mysql://localhost:3306/marketing_agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: ""
+  redis:
+    host: localhost
+    port: 6379
+    key-prefix: marketing-agent
+  milvus:
+    host: localhost
+    port: 19530
+    collection: marketing_knowledge
+  llm:
+    main-agent:
+      prompt-version: main-agent-v1
+      temperature: 0.2
+      timeout-seconds: 60

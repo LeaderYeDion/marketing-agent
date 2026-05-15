@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 
 import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.api.MarketingResponse;
+import com.example.marketing.core.audit.AuditEvent;
+import com.example.marketing.core.audit.AuditEventPublisher;
 import com.example.marketing.core.model.ContextSummary;
 import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.HumanFeedback;
@@ -19,6 +21,7 @@ import com.example.marketing.core.model.SubAgentInvocation;
 import com.example.marketing.core.model.SubAgentResult;
 import com.example.marketing.core.model.VisibleObject;
 import com.example.marketing.core.state.ConversationSession;
+import com.example.marketing.core.state.ConversationLockManager;
 import com.example.marketing.core.state.ConversationStore;
 
 @Service
@@ -26,28 +29,48 @@ public class AgentOrchestrator {
     private final ConversationStore conversationStore;
     private final MainAgent mainAgent;
     private final SubAgentRegistry subAgentRegistry;
+    private final AuditEventPublisher auditEventPublisher;
+    private final ConversationLockManager conversationLockManager;
 
     public AgentOrchestrator(ConversationStore conversationStore, MainAgent mainAgent,
-                             SubAgentRegistry subAgentRegistry) {
+                             SubAgentRegistry subAgentRegistry, AuditEventPublisher auditEventPublisher,
+                             ConversationLockManager conversationLockManager) {
         this.conversationStore = conversationStore;
         this.mainAgent = mainAgent;
         this.subAgentRegistry = subAgentRegistry;
+        this.auditEventPublisher = auditEventPublisher;
+        this.conversationLockManager = conversationLockManager;
     }
 
     public MarketingResponse run(MarketingRequest request) {
+        return conversationLockManager.withConversationLock(request.conversationId(), () -> runLocked(request));
+    }
+
+    private MarketingResponse runLocked(MarketingRequest request) {
         ConversationSession session = conversationStore.getOrCreate(request.conversationId());
         String query = request.query() == null ? "" : request.query();
         Optional<HumanFeedback> feedback = HumanFeedback.fromVariables(request.variables());
         if (feedback.isPresent()) {
+            auditEventPublisher.publish(AuditEvent.of("human_feedback_received", request.conversationId(),
+                    "orchestrator", Map.of("decision", feedback.get().decision(),
+                            "pendingActionId", feedback.get().pendingActionId(),
+                            "visibleObjectId", feedback.get().visibleObjectId())));
             session.addMessage(ConversationMessage.user(query, Map.of("variables", request.variables())));
-            return handleHumanFeedback(request, session, feedback.get());
+            MarketingResponse response = handleHumanFeedback(request, session, feedback.get());
+            conversationStore.save(session);
+            return response;
         }
         MainAgentDecision decision = mainAgent.decide(session, query, request.variables());
+        auditEventPublisher.publish(AuditEvent.of("main_agent_decided", request.conversationId(), "main_agent",
+                Map.of("action", decision.action(), "skillName", decision.skillName(),
+                        "delegateTo", decision.delegateTo())));
         session.addMessage(ConversationMessage.user(query, Map.of("variables", request.variables())));
         if ("direct_reply".equals(decision.action()) || "ask_user".equals(decision.action())) {
             String answer = decision.reply().isBlank() ? "我需要更多信息才能继续处理。" : decision.reply();
             session.addMessage(ConversationMessage.assistant(answer, "main_agent", decision.action(), Map.of()));
-            return response(request, answer, session, decision, List.of());
+            MarketingResponse response = response(request, answer, session, decision, List.of());
+            conversationStore.save(session);
+            return response;
         }
         Optional<PendingAction> naturalResumeAction = Optional.empty();
         if ("resume_pending_action".equals(decision.action())) {
@@ -67,8 +90,10 @@ public class AgentOrchestrator {
                 session.updateVisibleObjectStatus(action.visibleObjectId(), "executed");
             });
         }
-        return response(request, result.userVisibleSummary(), session, decision,
+        MarketingResponse response = response(request, result.userVisibleSummary(), session, decision,
                 result.visibleObjects().stream().map(VisibleObject::title).toList());
+        conversationStore.save(session);
+        return response;
     }
 
     private SubAgentResult delegate(MarketingRequest request, ConversationSession session, MainAgentDecision decision) {
@@ -87,6 +112,8 @@ public class AgentOrchestrator {
                 Map.of("visible_stream", true, "final_result_required", true, "may_request_hitl", true));
         SubAgent subAgent = subAgentRegistry.find(decision.delegateTo())
                 .orElseThrow(() -> new IllegalStateException("Unknown sub agent: " + decision.delegateTo()));
+        auditEventPublisher.publish(AuditEvent.of("subagent_started", request.conversationId(), subAgent.name(),
+                Map.of("invocationId", invocation.invocationId(), "skillName", decision.skillName())));
         return subAgent.run(invocation, request);
     }
 
@@ -115,6 +142,8 @@ public class AgentOrchestrator {
             return response(request, answer, session, null, List.of());
         }
         if (feedback.isReject()) {
+            auditEventPublisher.publish(AuditEvent.of("hitl_rejected", request.conversationId(), "orchestrator",
+                    Map.of("pendingActionId", action.id())));
             PendingAction rejected = action.withStatus(PendingActionStatus.REJECTED, request.userId());
             session.updatePendingAction(rejected);
             session.updateVisibleObjectStatus(action.visibleObjectId(), "rejected");
@@ -124,6 +153,8 @@ public class AgentOrchestrator {
             return response(request, answer, session, null, List.of());
         }
         if (feedback.isEdit()) {
+            auditEventPublisher.publish(AuditEvent.of("hitl_edited", request.conversationId(), "orchestrator",
+                    Map.of("pendingActionId", action.id())));
             PendingAction edited = action.withEditedPayload(feedback.editedPayload(), request.userId());
             session.updatePendingAction(edited);
             session.updateVisibleObjectStatus(action.visibleObjectId(), "edited");
@@ -133,6 +164,8 @@ public class AgentOrchestrator {
             return response(request, answer, session, null, List.of());
         }
         PendingAction approved = action.withStatus(PendingActionStatus.APPROVED, request.userId());
+        auditEventPublisher.publish(AuditEvent.of("hitl_approved", request.conversationId(), "orchestrator",
+                Map.of("pendingActionId", action.id(), "sourceAgent", action.sourceAgent())));
         session.updatePendingAction(approved);
         session.updateVisibleObjectStatus(action.visibleObjectId(), "approved");
         Map<String, Object> inputs = new LinkedHashMap<>(action.payload());

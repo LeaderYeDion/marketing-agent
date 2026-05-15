@@ -23,6 +23,31 @@ public class ConversationSession {
         this.conversationId = conversationId;
     }
 
+    public static ConversationSession fromSnapshot(ConversationSnapshot snapshot) {
+        ConversationSession session = new ConversationSession(snapshot.conversationId());
+        if (snapshot.messages() != null) {
+            session.messages.addAll(snapshot.messages());
+        }
+        if (snapshot.handoffSummaries() != null) {
+            session.handoffSummaries.addAll(snapshot.handoffSummaries());
+        }
+        if (snapshot.visibleObjects() != null) {
+            session.visibleObjects.putAll(snapshot.visibleObjects());
+        }
+        if (snapshot.pendingActions() != null) {
+            session.pendingActions.putAll(snapshot.pendingActions());
+        }
+        if (snapshot.state() != null) {
+            session.state.putAll(snapshot.state());
+        }
+        return session;
+    }
+
+    public ConversationSnapshot toSnapshot() {
+        return new ConversationSnapshot(conversationId, List.copyOf(messages), List.copyOf(handoffSummaries),
+                Map.copyOf(visibleObjects), Map.copyOf(pendingActions), Map.copyOf(state));
+    }
+
     public String conversationId() {
         return conversationId;
     }
