@@ -9,7 +9,8 @@ import com.example.marketing.core.model.PendingAction;
 import org.springframework.stereotype.Service;
 
 import com.example.marketing.core.llm.JsonSupport;
-import com.example.marketing.core.llm.LlmClient;
+import com.example.marketing.core.llm.LlmGateway;
+import com.example.marketing.core.llm.LlmRequest;
 import com.example.marketing.core.model.ContextSummary;
 import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.skill.LoadedSkill;
@@ -20,11 +21,11 @@ import com.example.marketing.core.state.ConversationSession;
 @Service
 public class MainAgent {
     private final SkillRegistry skillRegistry;
-    private final LlmClient llmClient;
+    private final LlmGateway llmGateway;
 
-    public MainAgent(SkillRegistry skillRegistry, LlmClient llmClient) {
+    public MainAgent(SkillRegistry skillRegistry, LlmGateway llmGateway) {
         this.skillRegistry = skillRegistry;
-        this.llmClient = llmClient;
+        this.llmGateway = llmGateway;
     }
 
     public MainAgentDecision decide(ConversationSession session, String userInput, Map<String, Object> variables) {
@@ -33,7 +34,7 @@ public class MainAgent {
         messages.addAll(recentVisibleMessages(session));
         messages.add(ConversationMessage.user(userInput, Map.of()));
         try {
-            String raw = llmClient.generate(system, messages);
+            String raw = llmGateway.generateText(LlmRequest.simple("main-routing", system, messages));
             return parseDecision(raw, variables, userInput);
         }
         catch (RuntimeException ex) {

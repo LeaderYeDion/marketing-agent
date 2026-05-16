@@ -6,10 +6,12 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 
 import com.example.marketing.core.context.MarketingAgentContext;
 
 @Service
+@Profile("!pgvector")
 public class InMemoryMarketingRagService implements RagService {
     private final List<RagDocument> documents = List.of(
             new RagDocument("policy-001", "会员拉新活动规则",

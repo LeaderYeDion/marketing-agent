@@ -1,0 +1,9 @@
+name: activity_enroll
+version: 1.0.0
+description: Handle Excel based marketing activity enrollment with human confirmation before side effects.
+entryAgent: activity_enroll_agent
+requiredContext: excel_file_path, activity_id
+canEmit: markdown, status, hitl_card, result_card
+permissions: file.read.excel, operation.activity_enroll
+promptResource: /skills/activity_enroll.md
+evalSuites: activity_enroll_basic

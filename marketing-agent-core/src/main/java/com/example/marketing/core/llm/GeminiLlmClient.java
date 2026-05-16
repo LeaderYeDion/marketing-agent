@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.List;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 
 import com.example.marketing.core.model.ConversationMessage;
 
@@ -18,11 +19,19 @@ public class GeminiLlmClient implements LlmClient {
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
+    private final String apiKey;
+    private final String model;
+
+    public GeminiLlmClient(@Value("${agent.llm.gemini.api-key:}") String apiKey,
+                           @Value("${agent.llm.gemini.model:}") String model) {
+        this.apiKey = apiKey == null || apiKey.isBlank() ? GeminiConstants.GEMINI_API_KEY : apiKey;
+        this.model = model == null || model.isBlank() ? GeminiConstants.GEMINI_MODEL : model;
+    }
 
     @Override
     public String generate(String systemMessage, List<ConversationMessage> messages) {
         String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/"
-                + GeminiConstants.GEMINI_MODEL + ":generateContent?key=" + GeminiConstants.GEMINI_API_KEY;
+                + model + ":generateContent?key=" + apiKey;
         String body = buildRequest(systemMessage, messages);
         HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(60))
@@ -32,18 +41,32 @@ public class GeminiLlmClient implements LlmClient {
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("Gemini request failed with HTTP " + response.statusCode() + ": "
-                        + response.body());
+                throw new LlmRuntimeException(classifyHttpStatus(response.statusCode()),
+                        "Gemini request failed with HTTP " + response.statusCode() + ": " + response.body(),
+                        response.statusCode() == 429 || response.statusCode() >= 500);
             }
             return JsonSupport.firstTextFromGeminiResponse(response.body());
         }
         catch (IOException ex) {
-            throw new IllegalStateException("Gemini request failed", ex);
+            throw new LlmRuntimeException(LlmErrorType.UNKNOWN, "Gemini request failed", true, ex);
         }
         catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Gemini request interrupted", ex);
+            throw new LlmRuntimeException(LlmErrorType.UNKNOWN, "Gemini request interrupted", true, ex);
         }
+    }
+
+    private LlmErrorType classifyHttpStatus(int statusCode) {
+        if (statusCode == 429) {
+            return LlmErrorType.RATE_LIMITED;
+        }
+        if (statusCode == 403) {
+            return LlmErrorType.QUOTA_EXCEEDED;
+        }
+        if (statusCode >= 500) {
+            return LlmErrorType.PROVIDER_5XX;
+        }
+        return LlmErrorType.PROVIDER_4XX;
     }
 
     private String buildRequest(String systemMessage, List<ConversationMessage> messages) {

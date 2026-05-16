@@ -20,7 +20,14 @@ public class KnowledgeTools {
 
     public ToolResult searchRelatedKnowledge(String query, MarketingAgentContext context) {
         List<RagDocument> documents = ragService.retrieve(query, context);
-        return ToolResult.ok("search_related_knowledge", Map.of("documents", documents));
+        return ToolResult.ok("search_related_knowledge", Map.of(
+                "documents", documents,
+                "citations", documents.stream()
+                        .map(document -> document.metadata().get("citation"))
+                        .filter(java.util.Objects::nonNull)
+                        .toList(),
+                "document_count", documents.size()
+        ));
     }
 
     public ToolResult webSearch(String query) {

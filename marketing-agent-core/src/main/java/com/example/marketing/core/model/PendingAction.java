@@ -29,7 +29,7 @@ public record PendingAction(
     }
 
     public boolean isPending() {
-        return PendingActionStatus.PENDING.equals(status);
+        return PendingActionStatus.PENDING.equals(status) || PendingActionStatus.EDITED.equals(status);
     }
 
     public boolean isExpired() {

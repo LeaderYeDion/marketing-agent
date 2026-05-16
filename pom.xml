@@ -15,6 +15,7 @@
         <module>marketing-agent-api</module>
         <module>marketing-agent-core</module>
         <module>marketing-agent-app</module>
+        <module>marketing-agent-eval</module>
     </modules>
 
     <properties>

@@ -1,0 +1,9 @@
+name: rule_inquiry
+version: 1.0.0
+description: Answer marketing activity, promotion, enrollment status and rule questions with citations.
+entryAgent: inquiry_agent
+requiredContext: question
+canEmit: markdown, citations
+permissions: knowledge.retrieve
+promptResource: /skills/rule_inquiry.md
+evalSuites: rule_inquiry_basic

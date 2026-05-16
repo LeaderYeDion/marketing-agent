@@ -32,7 +32,6 @@ public class JdbcConversationPersistence implements ConversationPersistence {
         this.url = url;
         this.username = username;
         this.password = password;
-        ensureSchema();
     }
 
     @Override
@@ -67,22 +66,6 @@ public class JdbcConversationPersistence implements ConversationPersistence {
         }
         catch (SQLException ex) {
             throw new IllegalStateException("Failed to save conversation snapshot: " + snapshot.conversationId(), ex);
-        }
-    }
-
-    private void ensureSchema() {
-        try (Connection connection = connect();
-             PreparedStatement statement = connection.prepareStatement("""
-                     create table if not exists agent_conversation_snapshot (
-                       conversation_id varchar(128) primary key,
-                       snapshot_json json not null,
-                       updated_at timestamp not null default current_timestamp
-                     )
-                     """)) {
-            statement.execute();
-        }
-        catch (SQLException ex) {
-            throw new IllegalStateException("Failed to initialize conversation snapshot schema", ex);
         }
     }
 

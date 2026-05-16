@@ -17,6 +17,7 @@ import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.HumanFeedback;
 import com.example.marketing.core.model.PendingAction;
 import com.example.marketing.core.model.PendingActionStatus;
+import com.example.marketing.core.model.PendingActionStateMachine;
 import com.example.marketing.core.model.SubAgentInvocation;
 import com.example.marketing.core.model.SubAgentResult;
 import com.example.marketing.core.model.VisibleObject;
@@ -31,15 +32,18 @@ public class AgentOrchestrator {
     private final SubAgentRegistry subAgentRegistry;
     private final AuditEventPublisher auditEventPublisher;
     private final ConversationLockManager conversationLockManager;
+    private final PendingActionStateMachine pendingActionStateMachine;
 
     public AgentOrchestrator(ConversationStore conversationStore, MainAgent mainAgent,
                              SubAgentRegistry subAgentRegistry, AuditEventPublisher auditEventPublisher,
-                             ConversationLockManager conversationLockManager) {
+                             ConversationLockManager conversationLockManager,
+                             PendingActionStateMachine pendingActionStateMachine) {
         this.conversationStore = conversationStore;
         this.mainAgent = mainAgent;
         this.subAgentRegistry = subAgentRegistry;
         this.auditEventPublisher = auditEventPublisher;
         this.conversationLockManager = conversationLockManager;
+        this.pendingActionStateMachine = pendingActionStateMachine;
     }
 
     public MarketingResponse run(MarketingRequest request) {
@@ -78,7 +82,7 @@ public class AgentOrchestrator {
                     .filter(PendingAction::isPending)
                     .findFirst();
             naturalResumeAction.ifPresent(action -> {
-                session.updatePendingAction(action.withStatus(PendingActionStatus.APPROVED, request.userId()));
+                session.updatePendingAction(pendingActionStateMachine.approve(action, request.userId()));
                 session.updateVisibleObjectStatus(action.visibleObjectId(), "approved");
             });
         }
@@ -86,7 +90,8 @@ public class AgentOrchestrator {
         commit(session, result);
         if ("succeeded".equals(result.status())) {
             naturalResumeAction.ifPresent(action -> {
-                session.updatePendingAction(action.withStatus(PendingActionStatus.EXECUTED, request.userId()));
+                PendingAction approved = session.pendingActions().get(action.id());
+                session.updatePendingAction(pendingActionStateMachine.executed(approved, request.userId()));
                 session.updateVisibleObjectStatus(action.visibleObjectId(), "executed");
             });
         }
@@ -133,7 +138,7 @@ public class AgentOrchestrator {
             return response(request, answer, session, null, List.of());
         }
         if (action.isExpired()) {
-            PendingAction expired = action.withStatus(PendingActionStatus.EXPIRED, request.userId());
+            PendingAction expired = pendingActionStateMachine.expire(action, request.userId());
             session.updatePendingAction(expired);
             session.updateVisibleObjectStatus(action.visibleObjectId(), "expired");
             String answer = "这个确认操作已经过期，请重新发起。";
@@ -144,7 +149,7 @@ public class AgentOrchestrator {
         if (feedback.isReject()) {
             auditEventPublisher.publish(AuditEvent.of("hitl_rejected", request.conversationId(), "orchestrator",
                     Map.of("pendingActionId", action.id())));
-            PendingAction rejected = action.withStatus(PendingActionStatus.REJECTED, request.userId());
+            PendingAction rejected = pendingActionStateMachine.reject(action, request.userId());
             session.updatePendingAction(rejected);
             session.updateVisibleObjectStatus(action.visibleObjectId(), "rejected");
             String answer = "已取消这次待确认操作。";
@@ -155,7 +160,7 @@ public class AgentOrchestrator {
         if (feedback.isEdit()) {
             auditEventPublisher.publish(AuditEvent.of("hitl_edited", request.conversationId(), "orchestrator",
                     Map.of("pendingActionId", action.id())));
-            PendingAction edited = action.withEditedPayload(feedback.editedPayload(), request.userId());
+            PendingAction edited = pendingActionStateMachine.edit(action, feedback.editedPayload(), request.userId());
             session.updatePendingAction(edited);
             session.updateVisibleObjectStatus(action.visibleObjectId(), "edited");
             String answer = "已记录你的调整，请重新确认后再执行。";
@@ -163,7 +168,7 @@ public class AgentOrchestrator {
                     Map.of("pendingActionId", action.id())));
             return response(request, answer, session, null, List.of());
         }
-        PendingAction approved = action.withStatus(PendingActionStatus.APPROVED, request.userId());
+        PendingAction approved = pendingActionStateMachine.approve(action, request.userId());
         auditEventPublisher.publish(AuditEvent.of("hitl_approved", request.conversationId(), "orchestrator",
                 Map.of("pendingActionId", action.id(), "sourceAgent", action.sourceAgent())));
         session.updatePendingAction(approved);
@@ -181,7 +186,7 @@ public class AgentOrchestrator {
         SubAgentResult result = subAgent.run(invocation, request);
         commit(session, result);
         if ("succeeded".equals(result.status())) {
-            session.updatePendingAction(approved.withStatus(PendingActionStatus.EXECUTED, request.userId()));
+            session.updatePendingAction(pendingActionStateMachine.executed(approved, request.userId()));
             session.updateVisibleObjectStatus(action.visibleObjectId(), "executed");
         }
         return response(request, result.userVisibleSummary(), session, null,

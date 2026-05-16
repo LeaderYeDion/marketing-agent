@@ -24,6 +24,13 @@ agent:
     host: localhost
     port: 19530
     collection: marketing_knowledge
+  pgvector:
+    url: jdbc:postgresql://localhost:5432/marketing_agent
+    username: postgres
+    password: ""
+    table: marketing_knowledge_chunk
+    top-k: 5
+    embedding-dimensions: 384
   llm:
     main-agent:
       prompt-version: main-agent-v1

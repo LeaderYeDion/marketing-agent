@@ -8,7 +8,8 @@ import org.springframework.stereotype.Service;
 
 import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.core.context.MarketingAgentContext;
-import com.example.marketing.core.llm.LlmClient;
+import com.example.marketing.core.llm.LlmGateway;
+import com.example.marketing.core.llm.LlmRequest;
 import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.SubAgentInvocation;
 import com.example.marketing.core.model.SubAgentResult;
@@ -18,11 +19,11 @@ import com.example.marketing.core.tool.KnowledgeTools;
 @Service
 public class InquiryAgent implements SubAgent {
     private final KnowledgeTools knowledgeTools;
-    private final LlmClient llmClient;
+    private final LlmGateway llmGateway;
 
-    public InquiryAgent(KnowledgeTools knowledgeTools, LlmClient llmClient) {
+    public InquiryAgent(KnowledgeTools knowledgeTools, LlmGateway llmGateway) {
         this.knowledgeTools = knowledgeTools;
-        this.llmClient = llmClient;
+        this.llmGateway = llmGateway;
     }
 
     @Override
@@ -69,7 +70,8 @@ public class InquiryAgent implements SubAgent {
                 RAG 结果：%s
                 """.formatted(question, invocation.compressedContext(), invocation.visibleObjects(), rag.data());
         try {
-            return llmClient.generate(system, List.of(ConversationMessage.user(prompt, Map.of())));
+            return llmGateway.generateText(LlmRequest.simple("rag-answer", system,
+                    List.of(ConversationMessage.user(prompt, Map.of()))));
         }
         catch (RuntimeException ex) {
             return "我现在无法调用大模型完成完整分析，但可以基于当前上下文判断：这个问题与营销活动或优惠报名规则相关。"

@@ -17,14 +17,19 @@ import com.example.marketing.api.MarketingStreamListener;
 import com.example.marketing.api.StreamEventTypes;
 import com.example.marketing.core.context.MarketingEventPublisher;
 import com.example.marketing.core.graph.MarketingGraphFactory;
+import com.example.marketing.core.observability.AgentRuntimeContext;
+import com.example.marketing.core.observability.AgentRuntimeContextHolder;
+import com.example.marketing.core.observability.AgentTelemetry;
 import com.example.marketing.core.state.MarketingStateKeys;
 
 @Service
 public class MarketingAgentService {
     private final MarketingGraphFactory graphFactory;
+    private final AgentTelemetry telemetry;
 
-    public MarketingAgentService(MarketingGraphFactory graphFactory) {
+    public MarketingAgentService(MarketingGraphFactory graphFactory, AgentTelemetry telemetry) {
         this.graphFactory = graphFactory;
+        this.telemetry = telemetry;
     }
 
     public MarketingResponse run(MarketingRequest request) {
@@ -38,16 +43,20 @@ public class MarketingAgentService {
                 normalizedRequest.conversationId(), StreamEventTypes.START, "graph", "营销助手开始处理", Map.of()));
         try {
             ResultHolder resultHolder = new ResultHolder();
-            MarketingEventPublisher.withListener(streamListener, () -> {
-                CompiledGraph graph = graphFactory.createGraph();
-                Map<String, Object> initialState = new HashMap<>();
-                initialState.put(MarketingStateKeys.REQUEST, normalizedRequest);
-                OverAllState state = graph.invoke(initialState, RunnableConfig.builder()
-                                .threadId(normalizedRequest.conversationId())
-                                .build())
-                        .orElseThrow(() -> new IllegalStateException("Graph returned empty state"));
-                resultHolder.response = toResponse(normalizedRequest, state);
-            });
+            AgentRuntimeContext runtimeContext = AgentRuntimeContext.create(normalizedRequest.conversationId(),
+                    normalizedRequest.userId());
+            AgentRuntimeContextHolder.withContext(runtimeContext, () ->
+                    MarketingEventPublisher.withListener(streamListener, () ->
+                            resultHolder.response = telemetry.timed("agent_request", "graph", () -> {
+                                CompiledGraph graph = graphFactory.createGraph();
+                                Map<String, Object> initialState = new HashMap<>();
+                                initialState.put(MarketingStateKeys.REQUEST, normalizedRequest);
+                                OverAllState state = graph.invoke(initialState, RunnableConfig.builder()
+                                                .threadId(normalizedRequest.conversationId())
+                                                .build())
+                                        .orElseThrow(() -> new IllegalStateException("Graph returned empty state"));
+                                return toResponse(normalizedRequest, state);
+                            })));
             MarketingResponse response = resultHolder.response;
             streamListener.onEvent(MarketingStreamEvent.of(
                     normalizedRequest.conversationId(), StreamEventTypes.DONE, "graph", "营销助手处理完成",

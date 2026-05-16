@@ -115,7 +115,7 @@ public class ConversationSession {
 
     public List<String> activePendingActionIds() {
         return pendingActions.values().stream()
-                .filter(action -> PendingActionStatus.PENDING.equals(action.status()))
+                .filter(PendingAction::isPending)
                 .map(PendingAction::id)
                 .toList();
     }

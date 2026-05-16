@@ -9,7 +9,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 import com.example.marketing.api.MarketingRequest;
-import com.example.marketing.core.llm.LlmClient;
+import com.example.marketing.core.llm.LlmGateway;
+import com.example.marketing.core.llm.LlmRequest;
 import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.SubAgentInvocation;
 import com.example.marketing.core.model.SubAgentResult;
@@ -23,12 +24,12 @@ import com.example.marketing.core.tool.FileTools;
 @Service
 public class ActivityEnrollAgent implements SubAgent {
     private final FileTools fileTools;
-    private final LlmClient llmClient;
+    private final LlmGateway llmGateway;
     private final OperationStore operationStore;
 
-    public ActivityEnrollAgent(FileTools fileTools, LlmClient llmClient, OperationStore operationStore) {
+    public ActivityEnrollAgent(FileTools fileTools, LlmGateway llmGateway, OperationStore operationStore) {
         this.fileTools = fileTools;
-        this.llmClient = llmClient;
+        this.llmGateway = llmGateway;
         this.operationStore = operationStore;
     }
 
@@ -161,7 +162,8 @@ public class ActivityEnrollAgent implements SubAgent {
                 Excel 摘要：%s
                 """.formatted(activityId, invocation.compressedContext(), summary.data());
         try {
-            return llmClient.generate(system, List.of(ConversationMessage.user(prompt, Map.of())));
+            return llmGateway.generateText(LlmRequest.simple("tool-result-summary", system,
+                    List.of(ConversationMessage.user(prompt, Map.of()))));
         }
         catch (RuntimeException ex) {
             return "我已读取文件摘要。表格包含列：" + summary.data().get("columns")

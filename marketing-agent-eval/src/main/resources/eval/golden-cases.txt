@@ -1,0 +1,15 @@
+id=rule_inquiry_001
+query=What are the enrollment rules for this marketing activity?
+expectedAction=delegate
+expectedSkillName=rule_inquiry
+expectedDelegateTo=inquiry_agent
+mustContain=rule
+forbidden=already executed enrollment
+---
+id=activity_enroll_001
+query=Enroll these coupons for activity A100 using the provided Excel.
+expectedAction=delegate
+expectedSkillName=activity_enroll
+expectedDelegateTo=activity_enroll_agent
+mustContain=
+forbidden=already executed enrollment
