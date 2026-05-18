@@ -1,6 +1,7 @@
 package com.example.marketing.core.agent;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -21,6 +22,7 @@ import com.example.marketing.core.model.PendingActionStateMachine;
 import com.example.marketing.core.model.SubAgentInvocation;
 import com.example.marketing.core.model.SubAgentResult;
 import com.example.marketing.core.model.VisibleObject;
+import com.example.marketing.core.skill.SkillRegistry;
 import com.example.marketing.core.state.ConversationSession;
 import com.example.marketing.core.state.ConversationLockManager;
 import com.example.marketing.core.state.ConversationStore;
@@ -33,17 +35,20 @@ public class AgentOrchestrator {
     private final AuditEventPublisher auditEventPublisher;
     private final ConversationLockManager conversationLockManager;
     private final PendingActionStateMachine pendingActionStateMachine;
+    private final SkillRegistry skillRegistry;
 
     public AgentOrchestrator(ConversationStore conversationStore, MainAgent mainAgent,
                              SubAgentRegistry subAgentRegistry, AuditEventPublisher auditEventPublisher,
                              ConversationLockManager conversationLockManager,
-                             PendingActionStateMachine pendingActionStateMachine) {
+                             PendingActionStateMachine pendingActionStateMachine,
+                             SkillRegistry skillRegistry) {
         this.conversationStore = conversationStore;
         this.mainAgent = mainAgent;
         this.subAgentRegistry = subAgentRegistry;
         this.auditEventPublisher = auditEventPublisher;
         this.conversationLockManager = conversationLockManager;
         this.pendingActionStateMachine = pendingActionStateMachine;
+        this.skillRegistry = skillRegistry;
     }
 
     public MarketingResponse run(MarketingRequest request) {
@@ -111,8 +116,10 @@ public class AgentOrchestrator {
                     .findFirst()
                     .ifPresent(action -> inputs.putAll(action.payload()));
         }
+        validateSkillDelegation(decision.skillName(), decision.delegateTo());
+        List<String> candidateSkills = candidateSkills(decision);
         SubAgentInvocation invocation = new SubAgentInvocation(invocationId, request.conversationId(),
-                UUID.randomUUID().toString(), decision.skillName(), decision.compressedContext(), inputs,
+                UUID.randomUUID().toString(), decision.skillName(), candidateSkills, decision.compressedContext(), inputs,
                 decision.compressedContext(), List.copyOf(session.visibleObjects().values()),
                 Map.of("visible_stream", true, "final_result_required", true, "may_request_hitl", true));
         SubAgent subAgent = subAgentRegistry.find(decision.delegateTo())
@@ -120,6 +127,46 @@ public class AgentOrchestrator {
         auditEventPublisher.publish(AuditEvent.of("subagent_started", request.conversationId(), subAgent.name(),
                 Map.of("invocationId", invocation.invocationId(), "skillName", decision.skillName())));
         return subAgent.run(invocation, request);
+    }
+
+    private void validateSkillDelegation(String skillName, String delegateTo) {
+        if (skillName == null || skillName.isBlank()) {
+            return;
+        }
+        String expectedEntryAgent = skillRegistry.find(skillName)
+                .orElseThrow(() -> new IllegalStateException("Unknown skill: " + skillName))
+                .entryAgent();
+        if (!expectedEntryAgent.equals(delegateTo)) {
+            throw new IllegalStateException("Skill " + skillName + " must delegate to "
+                    + expectedEntryAgent + " but got " + delegateTo);
+        }
+    }
+
+    private List<String> candidateSkills(MainAgentDecision decision) {
+        LinkedHashSet<String> skills = new LinkedHashSet<>();
+        if (decision.skillName() != null && !decision.skillName().isBlank()) {
+            skills.add(decision.skillName());
+        }
+        if (decision.candidateSkills() != null) {
+            decision.candidateSkills().stream()
+                    .filter(skill -> skill != null && !skill.isBlank())
+                    .forEach(skills::add);
+        }
+        skills.forEach(skill -> skillRegistry.find(skill)
+                .orElseThrow(() -> new IllegalStateException("Unknown candidate skill: " + skill)));
+        return List.copyOf(skills);
+    }
+
+    private List<String> candidateSkills(String skillName) {
+        if (skillName == null || skillName.isBlank()) {
+            return List.of();
+        }
+        skillRegistry.find(skillName).orElseThrow(() -> new IllegalStateException("Unknown skill: " + skillName));
+        return List.of(skillName);
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : value.toString();
     }
 
     private MarketingResponse handleHumanFeedback(MarketingRequest request, ConversationSession session,
@@ -177,8 +224,10 @@ public class AgentOrchestrator {
         inputs.putAll(feedback.editedPayload());
         inputs.put("confirmed", true);
         inputs.put("human_feedback_decision", feedback.decision());
+        String skillName = stringValue(inputs.get("skill_name"));
         SubAgentInvocation invocation = new SubAgentInvocation("resume_" + UUID.randomUUID().toString().substring(0, 8),
-                request.conversationId(), UUID.randomUUID().toString(), "", "resume pending action", inputs,
+                request.conversationId(), UUID.randomUUID().toString(), skillName, candidateSkills(skillName),
+                "resume pending action", inputs,
                 "用户已确认待执行动作", List.copyOf(session.visibleObjects().values()),
                 Map.of("visible_stream", true, "final_result_required", true, "human_feedback", true));
         SubAgent subAgent = subAgentRegistry.find(action.sourceAgent())

@@ -19,6 +19,7 @@ import com.example.marketing.core.model.VisibleObject;
 import com.example.marketing.core.operation.OperationRecord;
 import com.example.marketing.core.operation.OperationStatus;
 import com.example.marketing.core.operation.OperationStore;
+import com.example.marketing.core.skill.SkillRegistry;
 import com.example.marketing.core.tool.FileTools;
 
 @Service
@@ -26,11 +27,14 @@ public class ActivityEnrollAgent implements SubAgent {
     private final FileTools fileTools;
     private final LlmGateway llmGateway;
     private final OperationStore operationStore;
+    private final SkillRegistry skillRegistry;
 
-    public ActivityEnrollAgent(FileTools fileTools, LlmGateway llmGateway, OperationStore operationStore) {
+    public ActivityEnrollAgent(FileTools fileTools, LlmGateway llmGateway, OperationStore operationStore,
+                               SkillRegistry skillRegistry) {
         this.fileTools = fileTools;
         this.llmGateway = llmGateway;
         this.operationStore = operationStore;
+        this.skillRegistry = skillRegistry;
     }
 
     @Override
@@ -90,6 +94,7 @@ public class ActivityEnrollAgent implements SubAgent {
                 + rowCount + " 行数据。";
         Map<String, Object> cardData = new LinkedHashMap<>();
         cardData.put("source_agent", name());
+        cardData.put("skill_name", invocation.skillName());
         cardData.put("activity_id", activityId);
         cardData.put("excel_file_path", excelPath);
         cardData.put("detected_row_count", rowCount);
@@ -161,9 +166,10 @@ public class ActivityEnrollAgent implements SubAgent {
                 主 agent 提炼的上下文：%s
                 Excel 摘要：%s
                 """.formatted(activityId, invocation.compressedContext(), summary.data());
+        String skillPlaybook = loadSkillPlaybook(invocation);
         try {
             return llmGateway.generateText(LlmRequest.simple("tool-result-summary", system,
-                    List.of(ConversationMessage.user(prompt, Map.of()))));
+                    List.of(ConversationMessage.user(skillPlaybook + "\n\n" + prompt, Map.of()))));
         }
         catch (RuntimeException ex) {
             return "我已读取文件摘要。表格包含列：" + summary.data().get("columns")
@@ -173,6 +179,16 @@ public class ActivityEnrollAgent implements SubAgent {
 
     private boolean isConfirmed(SubAgentInvocation invocation) {
         return Boolean.TRUE.equals(invocation.inputs().get("confirmed"));
+    }
+
+    private String loadSkillPlaybook(SubAgentInvocation invocation) {
+        if (invocation.skillName() == null || invocation.skillName().isBlank()) {
+            return "";
+        }
+        if (invocation.candidateSkills() == null || !invocation.candidateSkills().contains(invocation.skillName())) {
+            return "";
+        }
+        return skillRegistry.load(invocation.skillName()).map(skill -> skill.content()).orElse("");
     }
 
     private String stringInput(SubAgentInvocation invocation, String key) {

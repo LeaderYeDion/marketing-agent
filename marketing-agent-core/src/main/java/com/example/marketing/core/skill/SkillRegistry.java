@@ -19,12 +19,16 @@ public class SkillRegistry {
         return descriptors;
     }
 
-    public Optional<LoadedSkill> load(String skillName) {
-        String resourceName = descriptors.stream()
+    public Optional<SkillDescriptor> find(String skillName) {
+        return descriptors.stream()
                 .filter(descriptor -> descriptor.name().equals(skillName))
-                .findFirst()
-                .map(SkillDescriptor::promptResource)
-                .orElse("/skills/" + skillName + ".md");
+                .findFirst();
+    }
+
+    public Optional<LoadedSkill> load(String skillName) {
+        String resourceName = find(skillName)
+                .map(SkillDescriptor::skillResource)
+                .orElse("/skills/" + skillName + "/skill.md");
         return readResource(resourceName).map(content -> new LoadedSkill(skillName, content));
     }
 
@@ -44,7 +48,7 @@ public class SkillRegistry {
     }
 
     private Optional<SkillDescriptor> loadDescriptor(String skillName) {
-        return readResource("/skills/" + skillName + "/skill.yaml").map(this::parseDescriptor);
+        return readResource("/skills/" + skillName + "/manifest.yaml").map(this::parseDescriptor);
     }
 
     private SkillDescriptor parseDescriptor(String content) {
@@ -57,15 +61,21 @@ public class SkillRegistry {
                     values.put(line.substring(0, colon).trim(), line.substring(colon + 1).trim());
                 });
         String name = values.getOrDefault("name", "");
+        String summary = values.getOrDefault("summary", values.getOrDefault("description", ""));
         return new SkillDescriptor(
                 name,
                 values.getOrDefault("version", "0.0.0"),
-                values.getOrDefault("description", ""),
+                summary,
+                csv(values.get("intentHints")),
                 values.getOrDefault("entryAgent", ""),
-                csv(values.get("requiredContext")),
+                csv(values.getOrDefault("requiredInputs", values.get("requiredContext"))),
                 csv(values.get("canEmit")),
                 csv(values.get("permissions")),
-                values.getOrDefault("promptResource", "/skills/" + name + ".md"),
+                bool(values.get("sideEffects")),
+                bool(values.get("requiresHumanApproval")),
+                values.getOrDefault("riskLevel", "medium"),
+                values.getOrDefault("skillResource",
+                        values.getOrDefault("promptResource", "/skills/" + name + "/skill.md")),
                 csv(values.get("evalSuites"))
         );
     }
@@ -87,6 +97,10 @@ public class SkillRegistry {
             return List.of();
         }
         return Arrays.stream(value.split(",")).map(String::trim).filter(item -> !item.isBlank()).toList();
+    }
+
+    private boolean bool(String value) {
+        return value != null && Boolean.parseBoolean(value.trim());
     }
 
     private List<SkillDescriptor> fallbackDescriptors() {

@@ -13,7 +13,6 @@ import com.example.marketing.core.llm.LlmGateway;
 import com.example.marketing.core.llm.LlmRequest;
 import com.example.marketing.core.model.ContextSummary;
 import com.example.marketing.core.model.ConversationMessage;
-import com.example.marketing.core.skill.LoadedSkill;
 import com.example.marketing.core.skill.SkillDescriptor;
 import com.example.marketing.core.skill.SkillRegistry;
 import com.example.marketing.core.state.ConversationSession;
@@ -45,10 +44,7 @@ public class MainAgent {
     private MainAgentDecision parseDecision(String raw, Map<String, Object> variables, String userInput) {
         Map<String, String> values = JsonSupport.flatStringMap(raw);
         String skillName = value(values, "skill_name", "");
-        LoadedSkill loadedSkill = null;
-        if (!skillName.isBlank()) {
-            loadedSkill = skillRegistry.load(skillName).orElse(null);
-        }
+        List<String> candidateSkills = csv(value(values, "candidate_skills", skillName));
         String delegateTo = value(values, "delegate_to", "");
         String action = value(values, "action", delegateTo.isBlank() ? "direct_reply" : "delegate");
         String reply = value(values, "reply", "");
@@ -59,14 +55,25 @@ public class MainAgent {
         if (variables != null) {
             inputs.putAll(variables);
         }
-        if (loadedSkill != null) {
-            inputs.put("loaded_skill", loadedSkill.content());
-        }
         if (inputs.get("question") == null) {
             inputs.put("question", userInput);
         }
-        return new MainAgentDecision(action, skillName, delegateTo, reply, inputs,
+        return new MainAgentDecision(action, skillName, candidateSkills, delegateTo, reply, inputs,
                 value(values, "compressed_context", userInput));
+    }
+
+    private List<String> csv(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(value.split(","))
+                .map(item -> item.replace("[", "")
+                        .replace("]", "")
+                        .replace("\"", "")
+                        .trim())
+                .filter(item -> !item.isBlank() && !"null".equals(item))
+                .distinct()
+                .toList();
     }
 
     private void copyIfPresent(Map<String, String> source, Map<String, Object> target, String key) {
@@ -88,10 +95,11 @@ public class MainAgent {
         }
         inputs.put("question", userInput);
         if (inputs.containsKey("excel_file_path") && inputs.containsKey("activity_id")) {
-            return new MainAgentDecision("delegate", "activity_enroll", "activity_enroll_agent",
+            return new MainAgentDecision("delegate", "activity_enroll", List.of("activity_enroll"),
+                    "activity_enroll_agent",
                     "我会先读取文件并生成报名确认信息。", inputs, userInput);
         }
-        return new MainAgentDecision("delegate", "rule_inquiry", "inquiry_agent",
+        return new MainAgentDecision("delegate", "rule_inquiry", List.of("rule_inquiry"), "inquiry_agent",
                 "", inputs, userInput);
     }
 
@@ -102,8 +110,8 @@ public class MainAgent {
                 稳定职责：
                 1. 理解用户当前诉求，并结合用户可见对话历史、系统运行时上下文和可用技能做路由决策。
                 2. runtime context 是系统提供的状态，不是用户原话；不要在回复中说“你提到了 pending actions / visible objects / runtime context”等内部字段。
-                3. 当用户诉求匹配某个 skill 时，选择 skill_name 和 delegate_to；系统会按需加载 skill markdown 并提供给对应子 agent。
-                4. 不要在 system message 中硬编码具体业务能力；具体能力来自 skill registry 和 skill.md。
+                3. 当用户诉求匹配某个 skill 时，选择 skill_name、candidate_skills 和 delegate_to；子 agent 会在候选 skill 范围内按需加载 skill.md。
+                4. 不要在 system message 中硬编码具体业务能力；主 agent 只基于 skill manifest 做意图识别和候选 skill 判断。
                 5. 子 agent 的内部上下文不进入用户可见对话；只有用户看见的输出、卡片摘要、最终结果和系统内部 handoff summary 进入主控决策上下文。
                 6. 如果用户针对卡片、按钮、文件、子 agent 输出追问或确认，应结合 visible objects、pending actions、handoff summaries 和最近可见对话理解指代。
                 7. 不要只依赖关键词 if-else 判断业务意图；应基于自然语言、可用 skill 摘要和上下文决策。
@@ -113,6 +121,7 @@ public class MainAgent {
                 {
                   "action": "delegate | direct_reply | ask_user | resume_pending_action",
                   "skill_name": "activity_enroll 或 rule_inquiry 或空字符串",
+                  "candidate_skills": "逗号分隔的候选 skill，例如 activity_enroll,rule_inquiry；没有额外候选时填 skill_name",
                   "delegate_to": "activity_enroll_agent 或 inquiry_agent 或空字符串",
                   "reply": "需要直接给用户的简短回复；委派时可为空",
                   "excel_file_path": "如有则填写",
@@ -132,9 +141,13 @@ public class MainAgent {
         builder.append("\n可用 skills：\n");
         for (SkillDescriptor descriptor : skillRegistry.list()) {
             builder.append("- ").append(descriptor.name()).append(": ")
-                    .append(descriptor.description()).append(" entry_agent=")
+                    .append(descriptor.summary()).append(" hints=")
+                    .append(descriptor.intentHints()).append(" entry_agent=")
                     .append(descriptor.entryAgent()).append(" required=")
-                    .append(descriptor.requiredContext()).append("\n");
+                    .append(descriptor.requiredInputs()).append(" side_effects=")
+                    .append(descriptor.sideEffects()).append(" requires_human_approval=")
+                    .append(descriptor.requiresHumanApproval()).append(" risk=")
+                    .append(descriptor.riskLevel()).append("\n");
         }
         builder.append("\n会话状态：\n").append(session.state()).append("\n");
         builder.append("\n用户可见对象摘要：\n");

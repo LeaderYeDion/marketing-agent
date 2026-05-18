@@ -1,0 +1,13 @@
+name: activity_enroll
+version: 1.0.0
+summary: Handle Excel based marketing activity enrollment and require human confirmation before side effects.
+intentHints: enroll coupons from Excel, create enrollment preview, confirm activity enrollment, execute approved enrollment
+entryAgent: activity_enroll_agent
+requiredInputs: excel_file_path, activity_id
+canEmit: markdown, status, hitl_card, result_card
+permissions: file.read.excel, operation.activity_enroll
+sideEffects: true
+requiresHumanApproval: true
+riskLevel: high
+skillResource: /skills/activity_enroll/skill.md
+evalSuites: activity_enroll_basic

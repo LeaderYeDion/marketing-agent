@@ -14,16 +14,19 @@ import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.SubAgentInvocation;
 import com.example.marketing.core.model.SubAgentResult;
 import com.example.marketing.core.model.ToolResult;
+import com.example.marketing.core.skill.SkillRegistry;
 import com.example.marketing.core.tool.KnowledgeTools;
 
 @Service
 public class InquiryAgent implements SubAgent {
     private final KnowledgeTools knowledgeTools;
     private final LlmGateway llmGateway;
+    private final SkillRegistry skillRegistry;
 
-    public InquiryAgent(KnowledgeTools knowledgeTools, LlmGateway llmGateway) {
+    public InquiryAgent(KnowledgeTools knowledgeTools, LlmGateway llmGateway, SkillRegistry skillRegistry) {
         this.knowledgeTools = knowledgeTools;
         this.llmGateway = llmGateway;
+        this.skillRegistry = skillRegistry;
     }
 
     @Override
@@ -69,13 +72,24 @@ public class InquiryAgent implements SubAgent {
                 用户可见对象：%s
                 RAG 结果：%s
                 """.formatted(question, invocation.compressedContext(), invocation.visibleObjects(), rag.data());
+        String skillPlaybook = loadSkillPlaybook(invocation);
         try {
             return llmGateway.generateText(LlmRequest.simple("rag-answer", system,
-                    List.of(ConversationMessage.user(prompt, Map.of()))));
+                    List.of(ConversationMessage.user(skillPlaybook + "\n\n" + prompt, Map.of()))));
         }
         catch (RuntimeException ex) {
             return "我现在无法调用大模型完成完整分析，但可以基于当前上下文判断：这个问题与营销活动或优惠报名规则相关。"
                     + "请补充活动 ID、优惠 ID 或你看到的卡片内容，我可以继续帮你定位。";
         }
+    }
+
+    private String loadSkillPlaybook(SubAgentInvocation invocation) {
+        if (invocation.skillName() == null || invocation.skillName().isBlank()) {
+            return "";
+        }
+        if (invocation.candidateSkills() == null || !invocation.candidateSkills().contains(invocation.skillName())) {
+            return "";
+        }
+        return skillRegistry.load(invocation.skillName()).map(skill -> skill.content()).orElse("");
     }
 }

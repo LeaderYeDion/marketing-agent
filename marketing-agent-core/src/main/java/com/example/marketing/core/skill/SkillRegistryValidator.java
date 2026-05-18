@@ -27,11 +27,15 @@ public class SkillRegistryValidator implements InitializingBean {
                 throw new IllegalStateException("Skill " + descriptor.name()
                         + " references unknown entry agent: " + descriptor.entryAgent());
             }
-            Set<String> missingInputs = new LinkedHashSet<>(descriptor.requiredContext());
+            Set<String> missingInputs = new LinkedHashSet<>(descriptor.requiredInputs());
             missingInputs.removeAll(capabilities.requiredInputs());
             if (!missingInputs.isEmpty()) {
                 throw new IllegalStateException("Skill " + descriptor.name()
                         + " requires inputs not supported by " + descriptor.entryAgent() + ": " + missingInputs);
+            }
+            if (skillRegistry.load(descriptor.name()).isEmpty()) {
+                throw new IllegalStateException("Skill " + descriptor.name()
+                        + " is missing skill resource: " + descriptor.skillResource());
             }
         });
     }
