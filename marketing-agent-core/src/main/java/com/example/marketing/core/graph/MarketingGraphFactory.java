@@ -11,7 +11,7 @@ import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.exception.GraphStateException;
 import com.alibaba.cloud.ai.graph.state.strategy.AppendStrategy;
 import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
-import com.example.marketing.core.agent.AgentOrchestrator;
+import com.example.marketing.core.harness.MarketingHarness;
 import com.example.marketing.core.node.MarketingNodeNames;
 import com.example.marketing.core.state.MarketingStateKeys;
 
@@ -21,10 +21,10 @@ import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
 
 @Component
 public class MarketingGraphFactory {
-    private final AgentOrchestrator agentOrchestrator;
+    private final MarketingHarness marketingHarness;
 
-    public MarketingGraphFactory(AgentOrchestrator agentOrchestrator) {
-        this.agentOrchestrator = agentOrchestrator;
+    public MarketingGraphFactory(MarketingHarness marketingHarness) {
+        this.marketingHarness = marketingHarness;
     }
 
     public CompiledGraph createGraph() {
@@ -32,7 +32,7 @@ public class MarketingGraphFactory {
             return new StateGraph(keyStrategyFactory())
                     .addNode(MarketingNodeNames.HARNESS, node_async(state -> java.util.Map.of(
                             MarketingStateKeys.RESPONSE,
-                            agentOrchestrator.run(state.value(MarketingStateKeys.REQUEST)
+                            marketingHarness.run(state.value(MarketingStateKeys.REQUEST)
                                     .filter(com.example.marketing.api.MarketingRequest.class::isInstance)
                                     .map(com.example.marketing.api.MarketingRequest.class::cast)
                                     .orElseThrow(() -> new IllegalStateException("Missing request")))

@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.example.marketing.api.MarketingResponse;
 import com.example.marketing.core.MarketingAgentService;
+import com.example.marketing.core.task.TaskGraph;
 
 public class GoldenCaseEvaluator {
     private final MarketingAgentService marketingAgentService;
@@ -33,6 +34,28 @@ public class GoldenCaseEvaluator {
         }
         if (!evalCase.expectedDelegateTo().isBlank() && !decision.contains(evalCase.expectedDelegateTo())) {
             failures.add("expected delegate " + evalCase.expectedDelegateTo() + " but decision was " + decision);
+        }
+        String taskGraphText = String.valueOf(response.metadata().get("taskGraph"));
+        if (evalCase.expectedCapabilities() != null) {
+            for (String capability : evalCase.expectedCapabilities()) {
+                if (!capability.isBlank() && !taskGraphText.contains(capability) && !decision.contains(capability)) {
+                    failures.add("expected capability " + capability + " but task graph was " + taskGraphText);
+                }
+            }
+        }
+        if (!evalCase.expectedHarnessStatus().isBlank()) {
+            String harness = String.valueOf(response.metadata().get("harness"));
+            if (!harness.contains(evalCase.expectedHarnessStatus())) {
+                failures.add("expected harness status " + evalCase.expectedHarnessStatus() + " but harness was "
+                        + harness);
+            }
+        }
+        if (evalCase.minTaskNodes() > 0) {
+            Object taskGraph = response.metadata().get("taskGraph");
+            int nodeCount = taskGraph instanceof TaskGraph graph ? graph.nodes().size() : 0;
+            if (nodeCount < evalCase.minTaskNodes()) {
+                failures.add("expected at least " + evalCase.minTaskNodes() + " task nodes but got " + nodeCount);
+            }
         }
         return failures.isEmpty() ? EvalResult.pass(evalCase.id()) : EvalResult.fail(evalCase.id(), failures);
     }

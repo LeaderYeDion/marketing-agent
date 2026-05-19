@@ -76,7 +76,13 @@ public class SkillRegistry {
                 values.getOrDefault("riskLevel", "medium"),
                 values.getOrDefault("skillResource",
                         values.getOrDefault("promptResource", "/skills/" + name + "/skill.md")),
-                csv(values.get("evalSuites"))
+                csv(values.get("evalSuites")),
+                csv(values.getOrDefault("outputContract", values.get("canEmit"))),
+                csv(values.get("composableWith")),
+                csv(values.get("fallbackSkills")),
+                csv(values.get("preconditions")),
+                csv(values.get("postconditions")),
+                values.getOrDefault("owner", "")
         );
     }
 

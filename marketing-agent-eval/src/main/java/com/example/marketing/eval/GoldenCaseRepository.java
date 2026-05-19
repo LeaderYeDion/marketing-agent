@@ -45,9 +45,12 @@ public class GoldenCaseRepository {
                 values.getOrDefault("expectedAction", ""),
                 values.getOrDefault("expectedSkillName", ""),
                 values.getOrDefault("expectedDelegateTo", ""),
+                csv(values.get("expectedCapabilities")),
+                values.getOrDefault("expectedHarnessStatus", ""),
+                intValue(values.get("minTaskNodes")),
                 csv(values.get("mustContain")),
                 csv(values.get("forbidden")),
-                Map.of()
+                variables(values)
         );
     }
 
@@ -56,5 +59,27 @@ public class GoldenCaseRepository {
             return List.of();
         }
         return Arrays.stream(value.split(",")).map(String::trim).filter(item -> !item.isBlank()).toList();
+    }
+
+    private int intValue(String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        }
+        catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    private Map<String, Object> variables(Map<String, String> values) {
+        Map<String, Object> variables = new LinkedHashMap<>();
+        values.forEach((key, value) -> {
+            if (key.startsWith("variable.")) {
+                variables.put(key.substring("variable.".length()), value);
+            }
+        });
+        return variables;
     }
 }

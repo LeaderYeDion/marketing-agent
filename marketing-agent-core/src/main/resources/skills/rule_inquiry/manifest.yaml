@@ -5,9 +5,15 @@ intentHints: ask activity rules, explain enrollment status, explain promotion ru
 entryAgent: inquiry_agent
 requiredInputs: question
 canEmit: markdown, citations
+outputContract: grounded_answer, citations, sufficiency_judgement
 permissions: knowledge.retrieve
 sideEffects: false
 requiresHumanApproval: false
 riskLevel: low
+composableWith: activity_enroll, copywriting
+fallbackSkills:
+preconditions: question is available
+postconditions: answer cites or explains evidence limits
+owner: marketing-knowledge
 skillResource: /skills/rule_inquiry/skill.md
 evalSuites: rule_inquiry_basic
