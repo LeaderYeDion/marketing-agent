@@ -35,20 +35,6 @@ public final class JsonSupport {
         return builder.append("\"").toString();
     }
 
-    public static String firstTextFromGeminiResponse(String json) {
-        String marker = "\"text\"";
-        int key = json.indexOf(marker);
-        if (key < 0) {
-            return "";
-        }
-        int colon = json.indexOf(':', key + marker.length());
-        int start = json.indexOf('"', colon + 1);
-        if (colon < 0 || start < 0) {
-            return "";
-        }
-        return readJsonString(json, start);
-    }
-
     public static String extractJsonObject(String text) {
         if (text == null) {
             return "{}";

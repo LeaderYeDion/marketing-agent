@@ -24,8 +24,8 @@ public class LlmGateway {
 
     public LlmGateway(LlmClient legacyClient,
                       List<LlmCallObserver> observers,
-                      @Value("${agent.llm.default-provider:gemini}") String defaultProvider,
-                      @Value("${agent.llm.default-model:gemini-2.5-flash-lite}") String defaultModel,
+                      @Value("${agent.llm.default-provider:dashscope}") String defaultProvider,
+                      @Value("${agent.llm.default-model:qwen-plus}") String defaultModel,
                       @Value("${agent.llm.timeout-seconds:60}") long timeoutSeconds,
                       @Value("${agent.llm.retry.max-attempts:1}") int defaultRetries,
                       @Value("${agent.llm.fallback-models:}") String fallbackModels,
@@ -74,7 +74,7 @@ public class LlmGateway {
             for (int attempt = 0; attempt <= request.maxRetries(); attempt++) {
                 Instant start = Instant.now();
                 try {
-                    String text = legacyClient.generate(modelRequest.systemMessage(), modelRequest.messages());
+                    String text = legacyClient.generate(modelRequest);
                     LlmResponse response = LlmResponse.success(text, modelRequest, Duration.between(start, Instant.now()),
                             retryCount, modelIndex > 0, estimateCost(text));
                     circuitBreaker.recordSuccess();

@@ -8,6 +8,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.Prompt;
 
 import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.api.MarketingResponse;
@@ -16,7 +21,7 @@ import com.example.marketing.core.llm.LlmClient;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.ai.dashscope.api-key=test-key")
 class MarketingAgentApplicationTests {
     @Autowired
     private MarketingAgentService marketingAgentService;
@@ -64,6 +69,18 @@ class MarketingAgentApplicationTests {
                     return "基于知识库，活动报名通常需要确认活动 ID、报名对象、优惠规则和生效条件。";
                 }
                 return "已完成。";
+            };
+        }
+
+        @Bean
+        @Primary
+        ChatModel stubChatModel() {
+            return new ChatModel() {
+                @Override
+                public ChatResponse call(Prompt prompt) {
+                    return new ChatResponse(List.of(new Generation(new AssistantMessage(
+                            "基于知识库，活动报名通常需要确认活动 ID、报名对象、优惠规则和生效条件。"))));
+                }
             };
         }
     }

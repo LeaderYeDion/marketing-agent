@@ -47,18 +47,65 @@ public class FileTools {
         }
     }
 
+    public ToolResult querySpreadsheetRows(String pathText, String keyword, int maxRows) {
+        Path path = Path.of(pathText == null ? "" : pathText);
+        if (!Files.exists(path)) {
+            return ToolResult.failed("query_spreadsheet_rows", "FILE_NOT_FOUND",
+                    "没有找到这个文件，请确认本地路径是否正确。", path.toString(), false);
+        }
+        try {
+            List<List<String>> rows = readRows(path);
+            String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase();
+            int limit = Math.max(1, Math.min(maxRows <= 0 ? 10 : maxRows, 30));
+            List<String> headers = rows.isEmpty() ? List.of() : rows.get(0);
+            List<Map<String, String>> matches = rows.stream()
+                    .skip(1)
+                    .filter(row -> normalizedKeyword.isBlank() || String.join(" ", row).toLowerCase()
+                            .contains(normalizedKeyword))
+                    .limit(limit)
+                    .map(row -> rowMap(headers, row))
+                    .toList();
+            return ToolResult.ok("query_spreadsheet_rows", Map.of(
+                    "file_path", path.toString(),
+                    "keyword", keyword == null ? "" : keyword,
+                    "headers", headers,
+                    "matched_rows", matches,
+                    "matched_count", matches.size()
+            ));
+        }
+        catch (IOException ex) {
+            return ToolResult.failed("query_spreadsheet_rows", "READ_FAILED",
+                    "读取文件失败，文件可能被占用或格式异常。", ex.getMessage(), true);
+        }
+    }
+
     private ToolResult summarizeDelimited(Path path) throws IOException {
-        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
-        List<String> headers = lines.isEmpty() ? List.of() : splitLine(lines.get(0));
-        List<List<String>> samples = lines.stream().skip(1).limit(5).map(this::splitLine).toList();
+        List<List<String>> rows = readDelimitedRows(path);
+        List<String> headers = rows.isEmpty() ? List.of() : rows.get(0);
+        List<List<String>> samples = rows.stream().skip(1).limit(5).toList();
         return ToolResult.ok("summarize_excel_content", Map.of(
                 "file_path", path.toString(),
                 "sheet_count", 1,
-                "row_count", Math.max(0, lines.size() - 1),
+                "row_count", Math.max(0, rows.size() - 1),
                 "columns", headers,
                 "sample_rows", samples,
-                "csv_preview", String.join("\n", lines.stream().limit(8).toList())
+                "csv_preview", toCsvPreview(rows)
         ));
+    }
+
+    private List<List<String>> readRows(Path path) throws IOException {
+        String lower = path.getFileName().toString().toLowerCase();
+        if (lower.endsWith(".csv") || lower.endsWith(".txt")) {
+            return readDelimitedRows(path);
+        }
+        if (lower.endsWith(".xlsx")) {
+            return readXlsxRows(path);
+        }
+        throw new IOException("Unsupported file type: " + path);
+    }
+
+    private List<List<String>> readDelimitedRows(Path path) throws IOException {
+        return Files.readAllLines(path, StandardCharsets.UTF_8).stream().map(this::splitLine).toList();
     }
 
     private List<String> splitLine(String line) {
@@ -71,16 +118,10 @@ public class FileTools {
     }
 
     private ToolResult summarizeXlsx(Path path) throws IOException {
-        Map<String, String> entries = unzipSelectedEntries(path);
-        List<String> sharedStrings = parseSharedStrings(entries.getOrDefault("xl/sharedStrings.xml", ""));
-        String sheetXml = entries.entrySet().stream()
-                .filter(entry -> entry.getKey().startsWith("xl/worksheets/sheet") && entry.getKey().endsWith(".xml"))
-                .map(Map.Entry::getValue)
-                .findFirst()
-                .orElse("");
-        List<List<String>> rows = parseRows(sheetXml, sharedStrings);
+        List<List<String>> rows = readXlsxRows(path);
         List<String> headers = rows.isEmpty() ? List.of() : rows.get(0);
         List<List<String>> samples = rows.stream().skip(1).limit(5).toList();
+        Map<String, String> entries = unzipSelectedEntries(path);
         return ToolResult.ok("summarize_excel_content", Map.of(
                 "file_path", path.toString(),
                 "sheet_count", entries.keySet().stream().filter(name -> name.startsWith("xl/worksheets/sheet")).count(),
@@ -89,6 +130,17 @@ public class FileTools {
                 "sample_rows", samples,
                 "csv_preview", toCsvPreview(rows)
         ));
+    }
+
+    private List<List<String>> readXlsxRows(Path path) throws IOException {
+        Map<String, String> entries = unzipSelectedEntries(path);
+        List<String> sharedStrings = parseSharedStrings(entries.getOrDefault("xl/sharedStrings.xml", ""));
+        String sheetXml = entries.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("xl/worksheets/sheet") && entry.getKey().endsWith(".xml"))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse("");
+        return parseRows(sheetXml, sharedStrings);
     }
 
     private Map<String, String> unzipSelectedEntries(Path path) throws IOException {
@@ -174,6 +226,16 @@ public class FileTools {
                 .limit(8)
                 .map(row -> String.join(",", row))
                 .reduce("", (left, right) -> left.isBlank() ? right : left + "\n" + right);
+    }
+
+    private Map<String, String> rowMap(List<String> headers, List<String> row) {
+        Map<String, String> values = new HashMap<>();
+        int width = Math.max(headers.size(), row.size());
+        for (int i = 0; i < width; i++) {
+            String key = i < headers.size() && !headers.get(i).isBlank() ? headers.get(i) : "column_" + (i + 1);
+            values.put(key, i < row.size() ? row.get(i) : "");
+        }
+        return values;
     }
 
     private String unescapeXml(String value) {

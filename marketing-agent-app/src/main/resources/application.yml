@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: marketing-agent
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+          temperature: 0.2
 
 management:
   endpoints:
@@ -32,6 +39,8 @@ agent:
     top-k: 5
     embedding-dimensions: 384
   llm:
+    default-provider: dashscope
+    default-model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
     main-agent:
       prompt-version: main-agent-v1
       temperature: 0.2
