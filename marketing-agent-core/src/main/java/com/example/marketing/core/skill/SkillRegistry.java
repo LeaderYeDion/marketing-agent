@@ -124,6 +124,13 @@ public class SkillRegistry {
                         "inquiry_agent",
                         List.of("question"),
                         List.of("markdown", "citations")
+                ),
+                new SkillDescriptor(
+                        "copywriting",
+                        "Create channel-aware marketing copy from user goals, audience context, and upstream observations.",
+                        "copywriting_provider",
+                        List.of("question"),
+                        List.of("markdown", "draft_copy")
                 )
         );
     }

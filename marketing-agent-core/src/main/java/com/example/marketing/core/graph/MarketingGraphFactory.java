@@ -9,10 +9,8 @@ import com.alibaba.cloud.ai.graph.KeyStrategy;
 import com.alibaba.cloud.ai.graph.KeyStrategyFactory;
 import com.alibaba.cloud.ai.graph.StateGraph;
 import com.alibaba.cloud.ai.graph.exception.GraphStateException;
-import com.alibaba.cloud.ai.graph.state.strategy.AppendStrategy;
 import com.alibaba.cloud.ai.graph.state.strategy.ReplaceStrategy;
 import com.example.marketing.core.harness.MarketingHarness;
-import com.example.marketing.core.node.MarketingNodeNames;
 import com.example.marketing.core.state.MarketingStateKeys;
 
 import static com.alibaba.cloud.ai.graph.StateGraph.END;
@@ -21,6 +19,7 @@ import static com.alibaba.cloud.ai.graph.action.AsyncNodeAction.node_async;
 
 @Component
 public class MarketingGraphFactory {
+    private static final String HARNESS_NODE = "harness";
     private final MarketingHarness marketingHarness;
 
     public MarketingGraphFactory(MarketingHarness marketingHarness) {
@@ -30,15 +29,15 @@ public class MarketingGraphFactory {
     public CompiledGraph createGraph() {
         try {
             return new StateGraph(keyStrategyFactory())
-                    .addNode(MarketingNodeNames.HARNESS, node_async(state -> java.util.Map.of(
+                    .addNode(HARNESS_NODE, node_async(state -> java.util.Map.of(
                             MarketingStateKeys.RESPONSE,
                             marketingHarness.run(state.value(MarketingStateKeys.REQUEST)
                                     .filter(com.example.marketing.api.MarketingRequest.class::isInstance)
                                     .map(com.example.marketing.api.MarketingRequest.class::cast)
                                     .orElseThrow(() -> new IllegalStateException("Missing request")))
                     )))
-                    .addEdge(START, MarketingNodeNames.HARNESS)
-                    .addEdge(MarketingNodeNames.HARNESS, END)
+                    .addEdge(START, HARNESS_NODE)
+                    .addEdge(HARNESS_NODE, END)
                     .compile();
         }
         catch (GraphStateException ex) {
@@ -51,14 +50,6 @@ public class MarketingGraphFactory {
             HashMap<String, KeyStrategy> strategies = new HashMap<>();
             strategies.put(MarketingStateKeys.REQUEST, new ReplaceStrategy());
             strategies.put(MarketingStateKeys.RESPONSE, new ReplaceStrategy());
-            strategies.put(MarketingStateKeys.CONTEXT, new ReplaceStrategy());
-            strategies.put(MarketingStateKeys.INTENT, new ReplaceStrategy());
-            strategies.put(MarketingStateKeys.RETRIEVED_DOCUMENTS, new ReplaceStrategy());
-            strategies.put(MarketingStateKeys.PLAN, new ReplaceStrategy());
-            strategies.put(MarketingStateKeys.ANSWER, new ReplaceStrategy());
-            strategies.put(MarketingStateKeys.SUGGESTIONS, new ReplaceStrategy());
-            strategies.put(MarketingStateKeys.NEXT, new ReplaceStrategy());
-            strategies.put(MarketingStateKeys.TRACE, new AppendStrategy());
             return strategies;
         };
     }

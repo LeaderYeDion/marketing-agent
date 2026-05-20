@@ -143,10 +143,6 @@ public class InquiryAgent implements SubAgent {
                     FunctionToolCallback.builder("search_knowledge_base", this::searchKnowledgeBase)
                             .description("Search a specific logical knowledge base. Supported values include rule, promotion, enrollment, case, risk, metric, or default.")
                             .inputType(SearchBaseRequest.class)
-                            .build(),
-                    FunctionToolCallback.builder("evaluate_retrieval_evidence", this::evaluateRetrievalEvidence)
-                            .description("Evaluate whether retrieved evidence is sufficient and relevant for the user question.")
-                            .inputType(EvidenceRequest.class)
                             .build());
         }
 
@@ -169,24 +165,6 @@ public class InquiryAgent implements SubAgent {
             return "knowledgeBase=" + base + ", result=" + result.data();
         }
 
-        private String evaluateRetrievalEvidence(EvidenceRequest request) {
-            String question = blankToDefault(request.question(), "");
-            String evidence = blankToDefault(request.evidence(), "");
-            int keywordHits = 0;
-            for (String token : question.split("\\s+|，|。|、|\\?|？")) {
-                if (!token.isBlank() && evidence.contains(token)) {
-                    keywordHits++;
-                }
-            }
-            boolean sufficient = evidence.length() > 40 && keywordHits > 0;
-            return Map.of(
-                    "sufficient", sufficient,
-                    "keywordHits", keywordHits,
-                    "guidance", sufficient
-                            ? "Evidence appears usable. Cite it and answer with caveats."
-                            : "Evidence looks weak. Rewrite the query, try another knowledge base, or ask the user for missing context."
-            ).toString();
-        }
     }
 
     private record SearchRequest(String query, String reason) {
@@ -195,6 +173,4 @@ public class InquiryAgent implements SubAgent {
     private record SearchBaseRequest(String query, String knowledgeBase, String reason) {
     }
 
-    private record EvidenceRequest(String question, String evidence) {
-    }
 }

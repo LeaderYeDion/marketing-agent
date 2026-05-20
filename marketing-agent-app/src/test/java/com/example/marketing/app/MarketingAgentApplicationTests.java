@@ -53,15 +53,25 @@ class MarketingAgentApplicationTests {
         @Primary
         LlmClient stubLlmClient() {
             return (systemMessage, messages) -> {
-                if (systemMessage.contains("\"action\"") && systemMessage.contains("\"delegate_to\"")) {
+                if (systemMessage.contains("TASK_GRAPH_PLANNER")) {
                     return """
                             {
-                              "action": "delegate",
-                              "skill_name": "rule_inquiry",
-                              "delegate_to": "inquiry_agent",
-                              "reply": "",
-                              "question": "活动报名规则有哪些？",
-                              "compressed_context": "用户咨询活动报名规则。"
+                              "rationale": "The user is asking for marketing activity enrollment rules.",
+                              "answerStrategy": "Return the grounded rule inquiry result.",
+                              "nodes": [
+                                {
+                                  "id": "node_1",
+                                  "goal": "Answer the marketing rule question with grounded context.",
+                                  "capabilityName": "rule_inquiry",
+                                  "dependsOn": [],
+                                  "inputs": {
+                                    "question": "活动报名规则有哪些？"
+                                  },
+                                  "completionCriteria": "A grounded answer is produced.",
+                                  "priority": 100,
+                                  "rationale": "rule_inquiry is the catalog capability for marketing rule questions."
+                                }
+                              ]
                             }
                             """;
                 }

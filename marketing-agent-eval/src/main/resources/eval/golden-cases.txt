@@ -1,6 +1,6 @@
 id=rule_inquiry_001
 query=What are the enrollment rules for this marketing activity?
-expectedAction=delegate
+expectedAction=execute_task_graph
 expectedSkillName=rule_inquiry
 expectedDelegateTo=inquiry_agent
 expectedCapabilities=rule_inquiry
@@ -11,7 +11,7 @@ forbidden=already executed enrollment
 ---
 id=activity_enroll_001
 query=Enroll these coupons for activity A100 using the provided Excel.
-expectedAction=delegate
+expectedAction=execute_task_graph
 expectedSkillName=activity_enroll
 expectedDelegateTo=activity_enroll_agent
 expectedCapabilities=activity_enroll
@@ -22,7 +22,7 @@ forbidden=already executed enrollment
 ---
 id=composite_rule_copy_001
 query=Check whether activity A100 promotion rules are suitable and write a group notification.
-expectedAction=delegate
+expectedAction=execute_task_graph
 expectedSkillName=rule_inquiry
 expectedDelegateTo=inquiry_agent
 expectedCapabilities=rule_inquiry,copywriting

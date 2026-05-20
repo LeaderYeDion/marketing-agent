@@ -1,6 +1,5 @@
 package com.example.marketing.core.capability;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,12 +16,9 @@ public class CapabilityRegistry {
     }
 
     public List<CapabilityDescriptor> list() {
-        List<CapabilityDescriptor> capabilities = new ArrayList<>();
-        skillRegistry.list().stream()
+        return skillRegistry.list().stream()
                 .map(CapabilityDescriptor::fromSkill)
-                .forEach(capabilities::add);
-        capabilities.add(copywritingCapability());
-        return List.copyOf(capabilities);
+                .toList();
     }
 
     public Optional<CapabilityDescriptor> find(String name) {
@@ -31,19 +27,4 @@ public class CapabilityRegistry {
                 .findFirst();
     }
 
-    private CapabilityDescriptor copywritingCapability() {
-        return new CapabilityDescriptor(
-                "copywriting",
-                "Create marketing copy, group notifications, SMS snippets, and campaign-facing messages.",
-                List.of("question"),
-                List.of("copy_draft", "assumptions", "source_observations"),
-                List.of("content.generate"),
-                false,
-                false,
-                "low",
-                "copywriting_provider",
-                List.of("rule_inquiry", "activity_enroll"),
-                List.of("rule_inquiry")
-        );
-    }
 }
