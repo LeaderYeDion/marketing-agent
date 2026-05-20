@@ -1,0 +1,19 @@
+name: copywriting
+version: 1.0.0
+summary: Create channel-aware marketing copy from user goals, audience context, and upstream observations.
+intentHints: write campaign copy, create community notice, draft SMS message, summarize promotion for users
+entryAgent: copywriting_provider
+requiredInputs: question
+canEmit: markdown, draft_copy
+outputContract: copy_draft, channel_fit, source_observation_usage
+permissions: content.generate
+sideEffects: false
+requiresHumanApproval: false
+riskLevel: low
+composableWith: rule_inquiry, activity_enroll
+fallbackSkills: rule_inquiry
+preconditions: user goal or upstream observation is available
+postconditions: draft reflects channel, product, audience, and source observations
+owner: marketing-content
+skillResource: /skills/copywriting/skill.md
+evalSuites: copywriting_basic
