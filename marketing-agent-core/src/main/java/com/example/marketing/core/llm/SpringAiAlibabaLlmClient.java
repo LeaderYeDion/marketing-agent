@@ -40,7 +40,7 @@ public class SpringAiAlibabaLlmClient implements LlmClient {
         ChatModel chatModel = chatModelProvider.getIfAvailable();
         if (chatModel == null) {
             throw new LlmRuntimeException(LlmErrorType.PROVIDER_4XX,
-                    "Spring AI ChatModel is not available. Configure Spring AI Alibaba DashScope before calling LLM.",
+                    "Spring AI ChatModel is not available. Configure a Spring AI chat provider before calling LLM.",
                     false);
         }
         try {
@@ -53,7 +53,7 @@ public class SpringAiAlibabaLlmClient implements LlmClient {
             throw ex;
         }
         catch (RuntimeException ex) {
-            throw new LlmRuntimeException(classify(ex), "Spring AI Alibaba chat request failed: " + ex.getMessage(),
+            throw new LlmRuntimeException(classify(ex), "Spring AI chat request failed: " + summarize(ex),
                     true, ex);
         }
     }
@@ -105,7 +105,7 @@ public class SpringAiAlibabaLlmClient implements LlmClient {
     }
 
     private LlmErrorType classify(RuntimeException ex) {
-        String message = ex == null || ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+        String message = summarize(ex).toLowerCase();
         if (message.contains("timeout") || message.contains("timed out")) {
             return LlmErrorType.TIMEOUT;
         }
@@ -115,13 +115,28 @@ public class SpringAiAlibabaLlmClient implements LlmClient {
         if (message.contains("quota")) {
             return LlmErrorType.QUOTA_EXCEEDED;
         }
-        if (message.contains("5xx") || message.contains("http 5")) {
+        if (message.contains("5xx") || message.contains("http 5") || message.contains("serverexception")) {
             return LlmErrorType.PROVIDER_5XX;
         }
-        if (message.contains("4xx") || message.contains("http 4")) {
+        if (message.contains("4xx") || message.contains("http 4") || message.contains("permission_denied")
+                || message.contains("clientexception") || message.contains("api key")) {
             return LlmErrorType.PROVIDER_4XX;
         }
         return LlmErrorType.UNKNOWN;
+    }
+
+    private String summarize(Throwable ex) {
+        if (ex == null) {
+            return "";
+        }
+        List<String> messages = new ArrayList<>();
+        Throwable current = ex;
+        while (current != null && messages.size() < 6) {
+            String message = current.getMessage() == null ? "" : current.getMessage();
+            messages.add(current.getClass().getSimpleName() + (message.isBlank() ? "" : ": " + message));
+            current = current.getCause();
+        }
+        return String.join(" -> ", messages);
     }
 
     private String firstNonBlank(String first, String second) {
