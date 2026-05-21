@@ -73,6 +73,55 @@
 - P2：运行质量、可评估性和可演进性问题。若不解决，迭代会越来越难判断是否变好。
 - P3：体验、工程完善和扩展性问题。重要，但可以在核心闭环稳定后推进。
 
+## 架构反例：不要在 Planner System Message 中硬编码业务子 Capability
+
+背景：
+
+上一轮 P0/P1 改造中，曾在 `TaskPlanner` 的 system message 中加入类似下面的业务特定指导：
+
+```text
+Prefer fine-grained composable capabilities over coarse end-to-end agents. For Excel based activity enrollment, decompose the goal into spreadsheet_summarize or spreadsheet_query_product, activity_rule_check, enrollment_preview_create, enrollment_execute, and notification_copywriting when those sub-goals are requested.
+```
+
+这个改动方向上的意图是对的：希望 planner 不再选择粗粒度 `activity_enroll`，而是组合细粒度 capability。但实现方式是错误的，因为它把当前某一批业务 capability 名称写进了 planner 的基础 system message。
+
+为什么这是反例：
+
+1. Planner 的基础能力应稳定服务于所有 capability，而不是随着某个业务 capability 的增删改反复修改。
+2. capability 的可组合性、前置条件、后置条件、风险、副作用和 schema 应来自 capability catalog / manifest，而不是写死在 prompt 文本里。
+3. 如果每新增、拆分、重命名一个 capability 都要改 planner system message，系统会重新退化成“prompt 中央路由表”。
+4. 这种写法会让 planner 隐含偏向某个历史业务流，削弱它对未来新营销场景的泛化能力。
+5. 它会让 regression 难以判断：到底是 planner 基础能力变强了，还是 system message 刚好记住了某一组 capability 名称。
+
+正确方向：
+
+1. `TaskPlanner` system message 只能描述通用规划原则：
+   - 使用 catalog 中的 capability。
+   - 倾向细粒度、可组合、可恢复的能力。
+   - 根据 schema、preconditions、postconditions、risk、sideEffects、approval requirement 和 composableWith 决定节点组合。
+   - 对高风险副作用先规划 preview/proposal/approval 边界。
+   - 对缺失输入规划 waiting_for_user 或 clarification。
+2. 业务能力名称、输入输出、依赖建议和组合关系必须由 manifest/capability catalog 表达。
+3. 如果 planner 不能从 catalog 推出正确 DAG，应优先增强 manifest schema、capability metadata、plan validation 和 eval，而不是把业务流程写进 system message。
+4. 对于需要领域推荐路径的能力，应通过 manifest 字段表达，例如：
+   - `capabilityType`
+   - `inputSchema`
+   - `outputSchema`
+   - `preconditions`
+   - `postconditions`
+   - `composableWith`
+   - `fallbacks`
+   - `riskLevel`
+   - `sideEffects`
+   - `requiresHumanApproval`
+5. eval 应覆盖这类退化：修改或新增 capability 后，不应要求同步修改 planner 基础 system message 才能通过核心用例。
+
+完成标准：
+
+- planner 基础 system message 不包含具体业务 capability 名称。
+- 新增、拆分或重命名 capability 时，只需要更新 manifest/catalog/provider/eval，不需要更新 planner 基础 prompt。
+- planner 的 DAG 质量提升来自更好的 capability contract、validation、repair 和 eval，而不是 prompt 中的业务硬编码。
+
 ## P0 状态：部分完成，仍需收口
 
 ### P0-1 将高风险动作强制拦截上移到 Harness
