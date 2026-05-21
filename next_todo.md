@@ -2,21 +2,31 @@
 
 ## 文档定位
 
-`project_goal.md` 定义项目的终极蓝图和架构原则；本文档定义当前实现距离蓝图的主要缺口，以及未来迭代时可直接执行的行动路径。
+`project_goal.md` 定义项目的终极蓝图和架构原则；本文档记录当前实现距离蓝图的真实差距，以及后续迭代时可直接执行的行动路径。
 
-本文档不关注早期开发阶段可接受的细枝末节，也不优先讨论横向扩展能力，而是聚焦会影响终极目标的架构问题：
+本文档已基于当前代码重新校准。当前仓库已经完成了一轮 P0/P1 方向的架构改造，但不能简单判定 P0/P1 全部完成。更准确的结论是：
 
-- 意图识别是否真正由 LLM planner 承担。
-- 任务拆解是否以 task graph 为第一等对象。
-- 能力是否通过 capability catalog 被清晰暴露、组合和治理。
-- RAG / embedding 是否能支撑 grounded 决策。
-- 主 agent、sub-agent、capability provider 之间的职责边界是否清晰。
-- 高风险动作是否被 harness 和 HITL 确定性控制。
-- 失败后是否能观测、恢复、续跑和重新规划。
+- P0-1 已经完成核心强制拦截路径，但审计、pending action 绑定完整性和覆盖面仍需收口。
+- P0-2 已经拆出了细粒度报名 capability，但旧 `activity_enroll_agent` 和通用 `SubAgentCapabilityProvider` 仍是架构退化口，尚未彻底降级或移除。
+- P1 已经具备 schema 字段、validator、waiting_for_user 续跑和 observation evaluator/re-plan 雏形，但多数仍是第一版骨架，未达到“稳定支撑复杂任务”的完成标准。
+
+本文档的判断依据包括：
+
+- `project_goal.md`
+- 当前 `next_todo.md` 历史内容
+- 当前实现中的 `MarketingHarness`
+- `TaskPlanner`
+- `TaskGraphValidator`
+- `CapabilityDescriptor` / `SkillDescriptor` / `SkillRegistry`
+- `ActivityEnrollmentCapabilityProvider`
+- `SubAgentCapabilityProvider`
+- `ObservationEvaluator`
+- `RecoveryPolicyEngine`
+- 当前 skill manifests 和应用级测试
 
 ## 终极目标摘要
 
-项目最终要演进为一个营销领域通用智能体运行时，而不是固定工作流或关键词路由系统。
+项目最终要演进为一个营销领域通用智能体运行时，而不是固定工作流、关键词路由系统或 sub-agent 委派系统。
 
 目标状态下，用户只需要用自然语言表达营销目标，系统应能：
 
@@ -31,17 +41,30 @@
 
 ## 当前总体判断
 
-当前项目方向正确，已经具备 TaskPlanner、TaskGraph、CapabilityRegistry、CapabilityProvider、Observation、RecoveryPolicyEngine、PendingActionStateMachine、审计和遥测等关键骨架。
+当前项目方向正确，并且相比上一版已经明显前进：
 
-但当前实现仍处于“harness 骨架 + 粗粒度 sub-agent 能力适配”的阶段，距离终极目标还有几个架构级缺口：
+- `MarketingHarness` 已在 provider 执行前根据 `RiskPolicyEngine` 强制拦截需要审批的高风险 capability。
+- `RiskPolicyEngine` 已不再把普通输入里的 `confirmed=true` 当成授权依据，而是依赖 `pending_action_approved`。
+- `PendingAction` 和 feedback 续跑逻辑已保护 `task_graph_id`、`task_node_id`、`capability_name`、`idempotency_key` 等绑定字段。
+- 已新增 `ActivityEnrollmentCapabilityProvider`，并把报名流程拆成 `spreadsheet_summarize`、`spreadsheet_query_product`、`activity_rule_check`、`enrollment_preview_create`、`enrollment_execute` 等细粒度 capability。
+- `CapabilityDescriptor` 已暴露 `capabilityType`、`inputSchema`、`outputSchema`、`preconditions`、`postconditions`。
+- `TaskGraphValidator` 已提供基础结构校验和 deterministic repair。
+- `MarketingHarness` 已支持 `waiting_for_user` observation，并能在用户补充变量后恢复原 task graph 的等待节点。
+- `ObservationEvaluator` 和 `RecoveryPolicyEngine` 已形成 observation evaluation / fallback / re-plan 的第一版闭环。
+- metadata 中已经包含 task graph、validation、observations、observation evaluations、risk assessments、harness trace 和 capability catalog。
+- 应用级测试已覆盖高风险直执拦截、细粒度 capability catalog 暴露、waiting_for_user 原图续跑、非法依赖修复。
 
-- 高风险动作的强制拦截还没有完全上移到 harness。
-- 业务 sub-agent 仍承载过多流程理解和工具编排职责。
-- capability catalog 还不足以让 planner 稳定推理输入输出、依赖和组合关系。
-- RAG / embedding 当前更像占位实现，尚不足以支撑真实 grounded 决策。
-- recovery 主要是局部 retry/fallback，尚未形成 observation -> evaluation -> re-plan 闭环。
-- 用户补充信息后的原图续跑能力还不完整。
-- eval 尚未真正约束 planner、DAG、HITL、observation 和恢复质量。
+但当前仍不能判定为最终形态下的 P0/P1 完成。主要原因：
+
+- `activity_enroll` 旧粗粒度 capability 仍在 catalog 中，`ActivityEnrollAgent` 仍存在，且 `SubAgentCapabilityProvider` 仍可作为任意 registered sub-agent 的通用 adapter。
+- `SubAgentCapabilityProvider` 当前仍是“万能 agent-backed capability 入口”，没有显式 provider mode、schema enforcement 或 agent-backed 能力边界约束。
+- `enrollment_preview_create` 创建的 pending action 会绑定 `enrollment_execute`，但当前 payload 中 `task_node_id` 为空，说明“approval 续跑只执行原 pending action 绑定节点”的数据完整性仍不够严。
+- `CapabilityDescriptor.inputSchema/outputSchema` 目前主要由 requiredInputs/outputContract 默认生成，manifest 尚未支持真正字段级 schema。
+- `TaskGraphValidator` 主要是结构校验，还不能判断 DAG 是否满足业务目标、是否遗漏必要节点、上下游 schema 是否真正匹配，也没有把 validation errors 交给 LLM 做 plan repair。
+- `waiting_for_user` 续跑主要依赖 request variables 和单字段 query 填充；多字段、自然语言补充、仍缺信息时更新同一 waiting node 的能力还不完整。
+- `ObservationEvaluator` 仍是简单规则，groundedness、充分性和 hallucination 检查都很粗糙。
+- re-plan 只有雏形，尚未形成可靠的 old graph / new graph trace 关系和 eval 约束。
+- eval harness 仍以文本和 metadata 包含检查为主，不能系统性约束 DAG、HITL、recovery、groundedness。
 
 ## 优先级说明
 
@@ -50,177 +73,245 @@
 - P2：运行质量、可评估性和可演进性问题。若不解决，迭代会越来越难判断是否变好。
 - P3：体验、工程完善和扩展性问题。重要，但可以在核心闭环稳定后推进。
 
-## P0 待办：必须优先处理的架构边界
+## P0 状态：部分完成，仍需收口
 
 ### P0-1 将高风险动作强制拦截上移到 Harness
 
-当前问题：
+当前状态：核心路径已完成，但未完全达到完成标准。
 
-`RiskPolicyEngine` 已能判断能力是否需要审批，但 `MarketingHarness` 目前主要记录风险评估，仍会直接调用 provider。真正禁止未确认执行的逻辑主要依赖 `ActivityEnrollAgent` 内部 prompt 和工具判断。这会让高风险边界依赖 sub-agent 自律，而不是 harness 的确定性策略。
+已完成：
 
-目标状态：
+1. `MarketingHarness.executePlannedGraph` 已在 provider 执行前评估风险。
+2. `RiskAssessment.requiresApproval=true` 时，harness 会直接生成 `waiting_for_approval` observation，不调用 provider。
+3. `confirmed=true` 不再被视为合法授权，`RiskPolicyEngine` 只认可 `pending_action_approved=true`。
+4. `PendingActionStateMachine.approve` 后，feedback 续跑由 harness 注入 `pending_action_approved=true`。
+5. `PendingAction.withEditedPayload` 和 `MarketingHarness.feedbackInputs` 已禁止用户编辑覆盖 `task_graph_id`、`task_node_id`、`capability_name`、`idempotency_key`、`approval_source`。
+6. `enrollment_execute` provider 内部也会拒绝没有 `pending_action_approved=true` 的执行请求。
+7. 应用级测试已覆盖 planner 直接选择 `enrollment_execute` 时不能绕过 harness。
 
-任何 `sideEffects=true` 或 `requiresHumanApproval=true` 的 capability，在没有合法 pending action approval 前，都不能进入真实副作用执行路径。模型和 sub-agent 只能产生 action proposal / confirmation card，真实执行必须由 `PendingActionStateMachine` 迁移后续跑。
+仍未完成：
 
-行动路径：
+1. `enrollment_preview_create` 当前创建的 pending action payload 中 `task_node_id` 为空。它绑定了 `capability_name=enrollment_execute`，但没有绑定到一个明确 task node。
+2. pending action、operation record、observation、audit 之间的双向关联仍不完整。
+3. pending action 创建本身主要来自 `commitObservation`，还没有统一的 audit event 记录。
+4. 状态机迁移已有 approved/rejected/edited 的 audit，但 executed、expired 等边界事件还不够完整。
+5. 当前只对已有测试场景验证了 direct side-effect block，还缺少更系统的 eval，例如 sub-agent 错误产出执行卡、payload 篡改、重复确认、过期确认等。
 
-1. 在 `MarketingHarness.executePlannedGraph` 中，在 provider 执行前根据 `RiskAssessment.requiresApproval` 做强制分流。
-2. 未确认的高风险节点只能执行“prepare/propose”类能力，或直接生成 `waiting_for_approval` observation。
-3. 将“已确认”定义为来自 `PendingActionStateMachine.approve` 的状态迁移，而不是普通输入里的 `confirmed=true`。
-4. pending action payload 中必须包含 `task_graph_id`、`task_node_id`、`capability_name`、幂等键和待执行 diff。
-5. approval 续跑时只允许执行与 pending action 绑定的 capability 和 payload。
-6. 增加 eval：高风险请求不得直接产生 executed operation；确认后才能执行。
+下一步行动：
+
+1. 将 `enrollment_preview_create` 改为创建明确的 continuation node，或在 pending action payload 中保存一个可恢复的 execution node descriptor，确保 `task_node_id` 非空。
+2. 抽出统一 `PendingActionFactory` 或 harness 内部 pending-action builder，禁止 provider 自己随意拼接 pending payload。
+3. 为 pending action created / approved / rejected / edited / expired / executed 全部写入 audit。
+4. operation record、pending action、observation、task graph node 之间保存稳定引用。
+5. 增加 eval：任何 `sideEffects=true` 或 `requiresHumanApproval=true` 的 capability 在未审批前不得产生 operation receipt。
 
 完成标准：
 
-- 任意 sub-agent 即使错误调用执行工具，也无法绕过 harness 边界。
-- 所有副作用都有 pending action、audit、idempotency key 和状态机记录。
+- 任意 provider 或 sub-agent 即使错误尝试执行副作用，也无法绕过 harness 边界。
+- 所有副作用都有 pending action、audit、idempotency key、operation record 和状态机记录。
+- approval 续跑只能执行 pending action 绑定的 capability 和 payload，且绑定信息完整可追踪。
 
 ### P0-2 将 Sub-agent 从“流程中心”降级为 Capability Provider
 
-当前问题：
+当前状态：部分完成，但仍有明显历史遗留。
 
-`activity_enroll_agent` 内部同时承担自然语言理解、Excel 查询、报名预览、确认卡生成和确认后执行等职责。上层 task graph 只能看到一个粗粒度 `activity_enroll` 节点，无法稳定组合、并行、恢复或替换其中的子步骤。
+已完成：
 
-目标状态：
-
-task graph 是复杂任务的中心表达。sub-agent 可以作为某些 capability 的执行后端，但不应该私有化关键业务流程。
-
-行动路径：
-
-1. 将 `activity_enroll` 拆分为更细 capability，例如：
+1. 已新增细粒度 capability：
    - `spreadsheet_summarize`
    - `spreadsheet_query_product`
    - `activity_rule_check`
    - `enrollment_preview_create`
    - `enrollment_execute`
    - `notification_copywriting`
-2. `activity_enroll_agent` 可暂时保留，但应改为这些 capability 的 provider 或 adapter，而不是端到端流程 owner。
-3. planner 负责把用户复合目标拆成多个节点，harness 负责调度依赖。
-4. 子能力之间只能通过 observation、artifact、visible object 和 state patch 交换信息。
-5. 新增组合型 golden cases，要求同一用户目标必须产生多节点 task graph，而不是一个大 agent 节点。
+2. 已新增 `ActivityEnrollmentCapabilityProvider`，这些能力可作为 task graph 的独立节点执行。
+3. `TaskPlanner` system message 已移除具体 capability 名称硬编码，改为根据 catalog 中的 description、schema、preconditions、postconditions、composableWith、fallbacks、sideEffects 和 approval requirement 做通用规划。
+4. `copywriting_provider` 已支持 `notification_copywriting`。
+5. 测试已验证细粒度 capability 暴露在 catalog 中。
+
+仍未完成：
+
+1. `activity_enroll` 仍在 `skills/index.txt` 中，仍可被 planner 选择。
+2. `ActivityEnrollAgent` 仍存在，并保留端到端流程逻辑。
+3. `SubAgentCapabilityProvider` 仍是通用 adapter：只要 manifest 的 `entryAgent` 是 registered sub-agent，它就会支持该 capability。这仍然给系统留下“把复杂任务丢回 sub-agent”的退路。
+4. `rule_inquiry` 当前仍依赖 `InquiryAgent` + `SubAgentCapabilityProvider`，还没有迁移为明确的 `RuleInquiryCapabilityProvider`。
+5. 对于 agent-backed capability，目前没有 schema validation、observation contract validation 或 provider mode 限制。
+
+下一步行动：
+
+1. 将 `rule_inquiry` 迁移到明确的 `RuleInquiryCapabilityProvider`。该 provider 内部可以调用 `InquiryAgent` 或 RAG/LLM，但 capability 边界必须由 provider 明确控制。
+2. 将 `activity_enroll` 标记 deprecated，或从默认 catalog 移除，仅保留细粒度 capability。
+3. 删除 `SubAgentCapabilityProvider`，或至少改名并收紧为显式 `agent-backed` provider mode，不允许任意 registered sub-agent 自动成为 capability provider。
+4. 对所有 provider 输出加 observation contract validation。
+5. 增加 eval：典型复合报名任务必须产生多节点 DAG，不能退回单个 `activity_enroll` 节点。
 
 完成标准：
 
-- 典型复合任务能在 metadata 中看到明确的多节点 DAG。
+- 典型复合任务能在 metadata 中看到明确多节点 DAG。
 - Excel 查询失败时可以只恢复查询节点，而不是整个报名 agent 失败。
-- 文案生成可以依赖报名预览 observation，而不依赖某个 sub-agent 私有状态。
+- 文案生成依赖上游 observation，而不是某个 sub-agent 私有状态。
+- 默认执行路径中不存在“任意 sub-agent 接管 capability”的万能入口。
 
-## P1 待办：核心实现需要大改
+## P1 状态：已有骨架，尚未完成
 
 ### P1-1 强化 Capability Manifest 和 Schema
 
-当前问题：
+当前状态：部分完成。
 
-当前 capability manifest 已包含 summary、requiredInputs、permissions、risk、composableWith 和 fallback，但输入输出契约仍是字符串列表，preconditions/postconditions 没有充分暴露给 planner，也缺少字段级 schema 和 artifact 契约。
+已完成：
 
-目标状态：
+1. `CapabilityDescriptor` 已包含：
+   - `capabilityType`
+   - `inputSchema`
+   - `outputSchema`
+   - `preconditions`
+   - `postconditions`
+2. `SkillDescriptor` 和 `SkillRegistry` 已支持读取 `capabilityType`、`preconditions`、`postconditions`。
+3. `TaskPlanner` prompt 和 `ContextAssembler` compressed context 已暴露更完整的 capability contract。
+4. metadata 中的 capability view 已包含 schema、type、preconditions、postconditions。
 
-capability catalog 应成为 planner 可推理的能力地图，而不是能力名列表。
+仍未完成：
 
-行动路径：
+1. manifest 目前仍没有真正字段级 `inputSchema` / `outputSchema` 解析。当前 schema 主要由 `requiredInputs` 和 `outputContract` 自动生成。
+2. `SkillRegistry.parseDescriptor` 仍是简单 key/value + CSV 解析，不支持 YAML 嵌套结构。
+3. `SkillRegistryValidator` 只验证 provider 是否存在、skill resource 是否存在、sub-agent requiredInputs 是否兼容；它不验证 schema、risk declaration、sideEffects、output contract。
+4. provider 输出没有被 schema validator 校验。
+5. artifact contract 仍未结构化。
 
-1. 为每个 capability 增加结构化 input schema 和 output schema。
-2. 将 preconditions、postconditions、side effects、risk policy、fallback policy 纳入 `CapabilityDescriptor`。
-3. 区分 capability 类型：
-   - read-only query
-   - transformation
-   - proposal/action planning
-   - side-effect execution
-4. 明确 observation 输出字段，例如 evidence、artifacts、visibleObjects、missingInputs、confidence。
-5. planner prompt 中暴露完整能力契约，而不是只暴露 required/risk/provider。
-6. 增加 manifest validator，校验 provider 是否能满足 schema 和风险声明。
+下一步行动：
+
+1. 升级 manifest 格式，支持字段级 input/output schema。
+2. 用 YAML parser 替代当前手写 key/value parser。
+3. 增加 `CapabilityManifestValidator`，验证 schema、risk、sideEffects、approval、provider support。
+4. 增加 `ObservationContractValidator`，校验 provider 输出是否满足 capability output schema。
+5. 将 artifact、evidence、visibleObjects、missingInputs、confidence 纳入 schema 契约。
 
 完成标准：
 
-- planner 能基于 schema 判断上游输出是否能满足下游输入。
+- planner 能基于 schema 判断上游输出是否满足下游输入。
 - 新增 capability 时不需要改 harness 路由代码。
+- provider 输出不符合 manifest 时会被 runtime 或测试发现。
 
 ### P1-2 增加 Plan Validation 和 Plan Repair
 
-当前问题：
+当前状态：基础结构已完成，语义能力不足。
 
-`TaskPlanner` 会校验 capability 是否存在并移除非法依赖，但还没有真正判断 DAG 是否满足业务目标、是否遗漏必要节点、是否错误跳过 HITL、是否存在输入输出不匹配。
+已完成：
 
-目标状态：
+1. 已新增 `TaskGraphValidator`。
+2. 已支持：
+   - null graph 检查。
+   - duplicate node id repair。
+   - unknown capability 移除并记录 error。
+   - invalid dependency 移除并记录 warning/repair。
+   - dependency cycle 检查并移除依赖。
+   - side-effect node without upstream proposal warning。
+   - required input not bound warning。
+3. `TaskPlanner` 不再静默移除非法依赖，修复过程由 validator 留痕。
+4. metadata 已包含 validation errors、warnings、repairs。
+5. 测试已覆盖非法依赖修复。
 
-planner 产出的 task graph 必须经过结构校验和语义校验。可修复问题应进入 plan repair，而不是直接 fallback 到单个安全能力。
+仍未完成：
 
-行动路径：
+1. validator 还不能判断 DAG 是否满足用户业务目标。
+2. validator 还不能判断是否遗漏必要节点，例如“执行报名前是否存在 preview/proposal node”。
+3. validator 只 warning 高风险节点没有 upstream proposal，没有执行 deterministic repair。
+4. required input 是否来自 request、context 或上游 observation 目前只是粗略判断，有依赖就放过。
+5. 下游节点是否依赖必要上游证据还没有 schema 级验证。
+6. validation errors 尚未进入 LLM based plan repair；当前 `TaskPlanner.replan` 只用于 observation recovery，不用于 plan validation repair。
 
-1. 增加 `TaskGraphValidator`：
-   - capability 是否存在。
-   - dependency 是否有效且无环。
-   - 高风险执行节点前是否存在 approval/proposal 节点。
-   - required inputs 是否来自 request、context 或上游 observation。
-   - 下游节点是否依赖必要上游证据。
-2. 增加 deterministic repair：
-   - 补齐缺失依赖。
-   - 插入 clarification 节点。
-   - 将未确认 side-effect 节点改为 proposal 节点。
-3. 增加 LLM based plan repair：
-   - 将 validation errors、capability catalog、原始用户目标交给模型重新生成计划。
-4. metadata 中记录 validation errors、repair trace 和最终计划来源。
+下一步行动：
+
+1. 增加 schema-aware dependency validation，判断下游 required input 是否可由上游 output schema 满足。
+2. 对未确认 side-effect node 做 deterministic repair：插入 proposal/preview 节点，或将 execution node 改为 waiting_for_approval。
+3. 增加 validation-driven LLM repair：把 validation errors、catalog、原始目标交给 planner 生成 repaired graph。
+4. metadata 区分 original planner output、deterministic repair result、LLM repair result。
+5. 增加 eval：错误计划不能静默执行，常见错误必须自动修复，不可修复错误必须明确追问或失败。
 
 完成标准：
 
 - 错误计划不会静默执行。
 - 常见可修复错误能自动修复。
 - 不可修复错误能明确追问用户或返回计划失败原因。
+- DAG 质量不只停留在结构合法，还能约束关键业务依赖。
 
 ### P1-3 支持 Waiting-for-user 后续跑原 Task Graph
 
-当前问题：
+当前状态：第一版已完成，但还不稳。
 
-approval feedback 已有续跑路径，但普通缺失信息的 `waiting_for_user` 场景主要是暂停并回答缺失输入。用户补充后容易重新规划，而不是回到原 task graph 的未完成节点。
+已完成：
 
-目标状态：
+1. harness 会在执行前检查 capability required inputs。
+2. 缺失输入时生成 `waiting_for_user` observation。
+3. observation/statePatch 中包含 `task_graph_id`、`task_node_id`、`capability_name`、`missing_inputs`、`expected_schema`。
+4. `ConversationSession.state.last_task_graph` 保存暂停图。
+5. 下一轮请求如果同 conversation 中存在 `waiting_for_user` graph，会尝试恢复等待节点。
+6. 如果用户通过 request variables 补齐缺失输入，原 node 会恢复为 pending 并继续执行。
+7. 测试已覆盖通过变量补齐 `excel_file_path` 后恢复原图。
 
-用户补充缺失信息后，系统应恢复原 task graph，将补充信息绑定到等待节点，并继续执行下游任务。
+仍未完成：
 
-行动路径：
+1. 补充信息映射主要依赖 request variables；自然语言补充只支持单缺失字段时把 query 填进去。
+2. 没有 LLM extractor 将用户自然语言映射到 missing inputs。
+3. 如果补充信息仍不足，当前 `resumeWaitingGraphIfPossible` 返回 null，随后会进入重新规划路径，可能创建新图；这不符合“更新同一个 waiting node，不创建新项目”的目标。
+4. 多 waiting node、多轮补充、部分补齐的处理还不完整。
+5. 下游节点依赖补充后的 observation 目前依靠普通 observation summary enrichment，缺少结构化 artifact/input binding。
 
-1. 在 `waiting_for_user` observation 中保存 `task_graph_id`、`task_node_id`、missing input keys 和 expected schema。
-2. 在 session state 中保存 paused graph。
-3. 用户下一轮输入进入 `ContextAssembler` 后，先检测是否有可恢复的 waiting node。
-4. 使用 LLM 或 deterministic extractor 将用户补充信息映射到 missing inputs。
-5. 恢复该节点为 pending，并继续执行原图。
-6. 若补充信息仍不足，更新同一个 waiting node，不创建新项目。
+下一步行动：
+
+1. 增加 `MissingInputExtractor`，支持 deterministic + LLM 两层提取。
+2. 如果仍缺信息，不重新规划；更新同一个 waiting node 的 missing inputs 和 expected schema。
+3. 支持多字段、多轮补充和部分补齐。
+4. 补齐后生成结构化 observation/artifact，而不是只靠 summary。
+5. 增加 eval：多轮补充不丢失原 task graph，下游节点能消费补齐后的结构化 observation。
 
 完成标准：
 
 - 多轮补充不会丢失原计划。
-- 下游节点仍能依赖补充后的上游 observation。
+- 信息不足时不会创建新项目。
+- 下游节点能依赖补充后的上游 observation。
 
 ### P1-4 建立 Observation Evaluation 和 Re-plan 闭环
 
-当前问题：
+当前状态：雏形已完成，但还不是可靠闭环。
 
-当前 `RecoveryPolicyEngine` 主要处理 retry、fallback 和 ask user。系统还不能判断“工具成功但证据不足”“计划本身错误”“需要改用另一组能力”等复杂情况。
+已完成：
 
-目标状态：
+1. 已新增 `ObservationEvaluator`。
+2. evaluation 会输出：
+   - `sufficient`
+   - `grounded`
+   - `usable`
+   - `needsFallback`
+   - `needsReplan`
+   - `reasons`
+3. `RecoveryPolicyEngine` 已基于 evaluation 判断 fallback、ask_user、replan 或 none。
+4. `TaskPlanner` 已新增 `replan(...)`。
+5. `MarketingHarness.applyRecoveryIfNeeded` 已能在 recovery action 为 `replan` 时调用 planner 生成新 graph。
+6. metadata 中已输出 observation evaluations。
 
-每个 observation 都应进入 evaluation，判断是否 sufficient、grounded、usable、needs_replan。
+仍未完成：
 
-行动路径：
+1. evaluator 的 groundedness 只是检查 evidence/artifacts/visibleObjects 是否为空，不能判断证据是否真实支持结论。
+2. completionCriteria 只用 confidence 阈值粗略判断，没有语义或 schema 级检查。
+3. “工具成功但内容不足”的场景没有充分测试。
+4. re-plan 后旧 graph 和新 graph 的 trace 关系只在 harness trace 中粗略记录，没有持久化 graph lineage。
+5. re-plan 没有合并已完成节点、未完成节点和新 continuation graph 的稳定策略。
+6. re-plan 本身没有 eval 约束，可能生成同样不可用的图。
 
-1. 增加 `ObservationEvaluator`：
-   - 是否满足 completionCriteria。
-   - evidence 是否充分。
-   - missingInputs 是否可由上下文补齐。
-   - 是否需要 fallback。
-   - 是否需要 re-plan。
-2. 将 `RecoveryPolicyEngine` 从简单规则升级为 policy + evaluator 组合。
-3. 支持 LLM based re-plan：
-   - 输入原始目标、当前 task graph、已有 observations、失败原因。
-   - 输出 repaired graph 或 continuation graph。
-4. re-plan 后保留旧 graph 和新 graph 的 trace 关系。
-5. eval 覆盖“工具返回成功但内容不足”的场景。
+下一步行动：
+
+1. 将 evaluator 升级为 schema-aware evaluator。
+2. 增加 groundedness 检查，至少检查 evidence source、citation、artifact id、upstream observation id。
+3. 明确 usable / sufficient / needs_replan 的策略边界。
+4. 为 re-plan 增加 graph lineage：previous_graph_id、new_graph_id、reason、carried_observations。
+5. 增加 eval：工具成功但 evidence 不足时必须 fallback、ask user 或 re-plan。
 
 完成标准：
 
 - 失败恢复不只依赖异常 retryable。
 - observation 质量能影响后续路径。
+- re-plan 能可靠保留已完成证据并生成 continuation graph。
 
 ## P2 待办：RAG、记忆、评估与可观测性
 
@@ -263,7 +354,7 @@ RAG 应提供可追踪、可引用、可评估的证据层，服务于规则判�
 
 当前问题：
 
-当前 compressed context 只包含用户目标、能力简表、visible object id、pending action id 和 state keys。planner 难以看到历史判断依据、未完成任务、artifact 摘要和关键 observation。
+当前 compressed context 已比早期多暴露了 capability schema/type，但工作记忆仍然偏薄。planner 仍难以稳定看到历史判断依据、未完成节点、artifact 摘要、关键 observation 和 graph lineage。
 
 目标状态：
 
@@ -278,9 +369,10 @@ RAG 应提供可追踪、可引用、可评估的证据层，服务于规则判�
    - 可用 artifacts 摘要。
    - visible object 的标题、状态和摘要。
    - pending action 的风险和动作摘要。
+   - graph lineage 和 re-plan 历史。
 2. 区分短期会话记忆、项目级记忆、artifact memory、decision memory。
 3. 增加 memory compaction 策略，避免上下文无限增长。
-4. 给 planner 和 sub-agent 提供不同视角的 context。
+4. 给 planner 和 provider/sub-agent 提供不同视角的 context。
 
 完成标准：
 
@@ -291,7 +383,7 @@ RAG 应提供可追踪、可引用、可评估的证据层，服务于规则判�
 
 当前问题：
 
-当前 golden cases 主要检查答案文本和 metadata 中是否包含能力名。它还不能有效验证 DAG 质量、HITL 边界、并行识别、恢复路径和 groundedness。
+当前应用级测试已覆盖部分 P0/P1 行为，但 eval harness 本身仍主要检查答案文本和 metadata 中是否包含能力名。它还不能有效验证 DAG 质量、HITL 边界、并行识别、恢复路径和 groundedness。
 
 目标状态：
 
@@ -309,9 +401,11 @@ eval 应成为架构演进的护栏，覆盖 planner、runtime、recovery、HITL
    - expected waiting_for_approval before execution。
    - expected fallback or re-plan。
    - expected citations / grounded evidence。
-3. 修正当前 `minTaskNodes` 对 metadata map 的读取问题。
+   - expected validation warnings / repairs。
+   - expected observation evaluation results。
+3. 当前 `minTaskNodes` 对 metadata map 的读取问题已修正，但还需要覆盖更多结构化断言。
 4. 增加中文自由表达、顺序打乱、多目标混合的案例。
-5. 增加 regression suite，避免新增业务能力时退回关键词路由。
+5. 增加 regression suite，避免新增业务能力时退回关键词路由或 sub-agent 中心化。
 
 完成标准：
 
@@ -322,7 +416,7 @@ eval 应成为架构演进的护栏，覆盖 planner、runtime、recovery、HITL
 
 当前问题：
 
-当前已有 trace、audit、metadata，但还需要进一步统一 run、task graph、node、observation、pending action、operation 之间的关联。
+当前已有 trace、audit、metadata，并且 metadata 已包含 validation 和 observation evaluation。但 run、task graph、node、observation、pending action、operation 之间的稳定关联仍不完整。
 
 目标状态：
 
@@ -338,6 +432,7 @@ eval 应成为架构演进的护栏，覆盖 planner、runtime、recovery、HITL
    - execution trace
    - recovery trace
    - HITL trace
+   - graph lineage
 4. audit 记录 side-effect boundary 的所有状态迁移。
 5. 增加 trace replay 所需的最小数据结构。
 
@@ -356,7 +451,7 @@ eval 应成为架构演进的护栏，覆盖 planner、runtime、recovery、HITL
 
 目标状态：
 
-最终回答应基于 answerStrategy、observations 和 visibleObjects 生成，而不是简单拼接。
+最终回答应基于 answerStrategy、observations、observation evaluations 和 visibleObjects 生成，而不是简单拼接。
 
 行动路径：
 
@@ -404,7 +499,7 @@ runtime 应能控制每个 capability 的执行预算、超时、并发和失败
 
 当前问题：
 
-部分能力仍是演示实现，例如 copywriting 是模板生成，报名执行是模拟 operation。
+部分能力仍是演示实现，例如 copywriting 是模板生成，报名执行是模拟 operation，`activity_rule_check` 也只是占位式规则检查。
 
 目标状态：
 
@@ -415,7 +510,8 @@ runtime 应能控制每个 capability 的执行预算、超时、并发和失败
 1. copywriting 接入 LLM provider，并基于 upstream observations 生成内容。
 2. enrollment execution 接入真实业务 API 前，先完善 dry-run、diff 和 rollback/compensation 设计。
 3. FileTools 增加结构化表格查询、列类型推断、商品 ID 精确匹配。
-4. 所有 provider 输出统一 observation schema。
+4. `activity_rule_check` 接入真实规则/RAG provider。
+5. 所有 provider 输出统一 observation schema。
 
 完成标准：
 
@@ -423,19 +519,24 @@ runtime 应能控制每个 capability 的执行预算、超时、并发和失败
 
 ## 建议迭代顺序
 
-第一阶段：收紧安全和架构中心。
+第一阶段：收口 P0 遗留，彻底移除 sub-agent 中心化退路。
 
-1. P0-1 Harness 强制 HITL 边界。
-2. P0-2 拆分粗粒度 sub-agent 能力。
-3. P1-1 capability schema 和 manifest 升级。
+1. 修复 pending action payload 绑定完整性，特别是 `task_node_id` 为空的问题。
+2. 建立统一 pending action builder 和完整 audit。
+3. 将 `rule_inquiry` 迁出 `SubAgentCapabilityProvider`，实现明确 provider。
+4. 将 `activity_enroll` 从默认 catalog 移除或标记 deprecated。
+5. 删除或严格收紧 `SubAgentCapabilityProvider`。
 
-第二阶段：让 task graph 真正可靠。
+第二阶段：补齐 P1 的真实 schema 和 plan repair。
 
-1. P1-2 plan validation / repair。
-2. P1-3 waiting_for_user 原图续跑。
-3. P1-4 observation evaluation / re-plan。
+1. manifest 支持字段级 schema。
+2. provider 输出 schema validation。
+3. schema-aware task graph validation。
+4. validation-driven deterministic repair 和 LLM repair。
+5. waiting_for_user 的 MissingInputExtractor。
+6. observation evaluator 升级为 schema/evidence aware。
 
-第三阶段：让知识和记忆可支撑真实决策。
+第三阶段：让知识、记忆和 trace 支撑真实决策。
 
 1. P2-1 RAG / embedding 升级。
 2. P2-2 context / memory 升级。

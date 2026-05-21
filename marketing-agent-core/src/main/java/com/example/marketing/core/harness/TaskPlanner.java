@@ -203,12 +203,13 @@ public class TaskPlanner {
         builder.append("Plan a DAG. Independent nodes may have an empty dependsOn array and will be executed ");
         builder.append("in parallel by the harness. Dependent nodes must name prerequisite node ids. ");
         builder.append("Only choose capabilities from the catalog. Do not invent capability names.\n\n");
-        builder.append("Prefer fine-grained composable capabilities over coarse end-to-end agents. For Excel based ");
-        builder.append("activity enrollment, decompose the goal into spreadsheet_summarize or ");
-        builder.append("spreadsheet_query_product, activity_rule_check, enrollment_preview_create, ");
-        builder.append("enrollment_execute, and notification_copywriting when those sub-goals are requested. ");
-        builder.append("Never use a side-effect execution capability as a substitute for preview or approval; ");
-        builder.append("the harness will enforce human approval before execution.\n\n");
+        builder.append("Prefer fine-grained, composable capabilities when the catalog exposes them. Use each ");
+        builder.append("capability's description, type, schemas, preconditions, postconditions, composableWith, ");
+        builder.append("fallbacks, sideEffects, and approval requirements to decide how to decompose the user goal. ");
+        builder.append("Do not rely on a coarse end-to-end capability when the catalog provides smaller capabilities ");
+        builder.append("whose contracts better match the sub-goals and dependency structure. Never use a side-effect ");
+        builder.append("execution capability as a substitute for proposal, preview, validation, or approval; the ");
+        builder.append("harness will enforce human approval before execution.\n\n");
         builder.append("Capability catalog:\n");
         for (CapabilityDescriptor capability : context.capabilities()) {
             builder.append("- name=").append(capability.name())
