@@ -37,6 +37,9 @@ public class ContextAssembler {
         for (CapabilityDescriptor capability : capabilities) {
             builder.append("- ").append(capability.name())
                     .append(" required=").append(capability.requiredInputs())
+                    .append(" type=").append(capability.capabilityType())
+                    .append(" inputSchema=").append(capability.inputSchema())
+                    .append(" outputSchema=").append(capability.outputSchema())
                     .append(" risk=").append(capability.riskLevel())
                     .append(" provider=").append(capability.provider())
                     .append("\n");

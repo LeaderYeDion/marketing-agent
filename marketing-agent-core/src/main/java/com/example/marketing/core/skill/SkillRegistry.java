@@ -82,7 +82,8 @@ public class SkillRegistry {
                 csv(values.get("fallbackSkills")),
                 csv(values.get("preconditions")),
                 csv(values.get("postconditions")),
-                values.getOrDefault("owner", "")
+                values.getOrDefault("owner", ""),
+                values.getOrDefault("capabilityType", "")
         );
     }
 

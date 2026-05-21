@@ -16,4 +16,8 @@ public record RecoveryDecision(
     public static RecoveryDecision askUser(String reason) {
         return new RecoveryDecision("ask_user", "", reason);
     }
+
+    public static RecoveryDecision replan(String reason) {
+        return new RecoveryDecision("replan", "", reason);
+    }
 }
