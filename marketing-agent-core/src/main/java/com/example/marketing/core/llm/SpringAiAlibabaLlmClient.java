@@ -24,7 +24,7 @@ public class SpringAiAlibabaLlmClient implements LlmClient {
     private final String configuredModel;
 
     public SpringAiAlibabaLlmClient(ObjectProvider<ChatModel> chatModelProvider,
-                                    @Value("${agent.llm.dashscope.model:${spring.ai.dashscope.chat.options.model:qwen-plus}}")
+                                    @Value("${agent.llm.default-model:${spring.ai.google.genai.chat.options.model:qwen-plus}}")
                                     String configuredModel) {
         this.chatModelProvider = chatModelProvider;
         this.configuredModel = configuredModel == null ? "" : configuredModel;

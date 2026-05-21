@@ -27,6 +27,7 @@ import com.example.marketing.core.model.HumanFeedback;
 import com.example.marketing.core.model.PendingAction;
 import com.example.marketing.core.model.PendingActionStateMachine;
 import com.example.marketing.core.model.VisibleObject;
+import com.example.marketing.core.observation.ActionProposal;
 import com.example.marketing.core.observation.Observation;
 import com.example.marketing.core.observability.AgentTelemetry;
 import com.example.marketing.core.policy.RiskAssessment;
@@ -500,20 +501,20 @@ public class MarketingHarness {
                                          List<HarnessTraceEvent> trace,
                                          List<CapabilityDescriptor> capabilities) {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("decision", harnessDecision(request, graph));
-        metadata.put("state", session.state());
-        metadata.put("visibleObjects", session.visibleObjects().keySet());
+        metadata.put("decision", jsonValue(harnessDecision(request, graph)));
+        metadata.put("state", jsonValue(session.state()));
+        metadata.put("visibleObjects", List.copyOf(session.visibleObjects().keySet()));
         metadata.put("pendingActions", session.activePendingActionIds());
         metadata.put("harness", Map.of(
                 "taskGraphId", graph.id(),
                 "status", graph.status(),
                 "observationCount", observations.size()
         ));
-        metadata.put("taskGraph", graph);
-        metadata.put("observations", observations);
-        metadata.put("riskAssessments", riskAssessments);
-        metadata.put("harnessTrace", trace);
-        metadata.put("capabilities", capabilities);
+        metadata.put("taskGraph", taskGraphView(graph));
+        metadata.put("observations", observations.stream().map(this::observationView).toList());
+        metadata.put("riskAssessments", riskAssessments.stream().map(this::riskAssessmentView).toList());
+        metadata.put("harnessTrace", trace.stream().map(this::traceView).toList());
+        metadata.put("capabilities", capabilities.stream().map(this::capabilityView).toList());
         return metadata;
     }
 
@@ -534,8 +535,160 @@ public class MarketingHarness {
         return decision;
     }
 
+    private Map<String, Object> taskGraphView(TaskGraph graph) {
+        if (graph == null) {
+            return Map.of();
+        }
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", graph.id());
+        view.put("userGoal", graph.userGoal());
+        view.put("status", graph.status());
+        view.put("plannerRationale", graph.plannerRationale());
+        view.put("answerStrategy", graph.answerStrategy());
+        view.put("nodes", graph.nodes().stream().map(this::taskNodeView).toList());
+        return view;
+    }
+
+    private Map<String, Object> taskNodeView(TaskNode node) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", node.id());
+        view.put("goal", node.goal());
+        view.put("capabilityName", node.capabilityName());
+        view.put("inputs", jsonValue(node.inputs()));
+        view.put("dependsOn", node.dependsOn());
+        view.put("completionCriteria", node.completionCriteria());
+        view.put("priority", node.priority());
+        view.put("plannerRationale", node.plannerRationale());
+        view.put("retryCount", node.retryCount());
+        view.put("status", node.status().name());
+        view.put("riskLevel", node.riskLevel());
+        view.put("observationId", node.observationId());
+        return view;
+    }
+
+    private Map<String, Object> observationView(Observation observation) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", observation.id());
+        view.put("runId", observation.runId());
+        view.put("taskNodeId", observation.taskNodeId());
+        view.put("capabilityName", observation.capabilityName());
+        view.put("status", observation.status());
+        view.put("summary", observation.summary());
+        view.put("evidence", jsonValue(observation.evidence()));
+        view.put("artifacts", jsonValue(observation.artifacts()));
+        view.put("confidence", observation.confidence());
+        view.put("missingInputs", observation.missingInputs());
+        view.put("riskLevel", observation.riskLevel());
+        view.put("requiresApproval", observation.requiresApproval());
+        view.put("actionProposal", actionProposalView(observation.actionProposal()));
+        view.put("errorType", observation.errorType());
+        view.put("retryable", observation.retryable());
+        view.put("visibleObjects", observation.visibleObjects().stream().map(this::visibleObjectView).toList());
+        view.put("messagesToCommit", jsonValue(observation.messagesToCommit()));
+        view.put("statePatch", jsonValue(observation.statePatch()));
+        return view;
+    }
+
+    private Map<String, Object> actionProposalView(ActionProposal proposal) {
+        if (proposal == null) {
+            return Map.of();
+        }
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", proposal.id());
+        view.put("type", proposal.type());
+        view.put("sourceCapability", proposal.sourceCapability());
+        view.put("summary", proposal.summary());
+        view.put("payload", jsonValue(proposal.payload()));
+        view.put("riskLevel", proposal.riskLevel());
+        return view;
+    }
+
+    private Map<String, Object> visibleObjectView(VisibleObject object) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", object.id());
+        view.put("type", object.type());
+        view.put("title", object.title());
+        view.put("status", object.status());
+        view.put("summary", object.summary());
+        view.put("data", jsonValue(object.data()));
+        view.put("createdAt", object.createdAt() == null ? "" : object.createdAt().toString());
+        return view;
+    }
+
+    private Map<String, Object> riskAssessmentView(RiskAssessment risk) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("capabilityName", risk.capabilityName());
+        view.put("riskLevel", risk.riskLevel());
+        view.put("requiresApproval", risk.requiresApproval());
+        view.put("readOnly", risk.readOnly());
+        view.put("reason", risk.reason());
+        return view;
+    }
+
+    private Map<String, Object> traceView(HarnessTraceEvent event) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("runId", event.runId());
+        view.put("eventType", event.eventType());
+        view.put("source", event.source());
+        view.put("status", event.status());
+        view.put("data", jsonValue(event.data()));
+        view.put("createdAt", event.createdAt() == null ? "" : event.createdAt().toString());
+        return view;
+    }
+
+    private Map<String, Object> capabilityView(CapabilityDescriptor capability) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("name", capability.name());
+        view.put("description", capability.description());
+        view.put("requiredInputs", capability.requiredInputs());
+        view.put("outputContract", capability.outputContract());
+        view.put("permissions", capability.permissions());
+        view.put("sideEffects", capability.sideEffects());
+        view.put("requiresHumanApproval", capability.requiresHumanApproval());
+        view.put("riskLevel", capability.riskLevel());
+        view.put("provider", capability.provider());
+        view.put("composableWith", capability.composableWith());
+        view.put("fallbackCapabilityNames", capability.fallbackCapabilityNames());
+        return view;
+    }
+
+    private Object jsonValue(Object value) {
+        if (value == null || value instanceof String || value instanceof Number || value instanceof Boolean) {
+            return value;
+        }
+        if (value instanceof Enum<?> enumValue) {
+            return enumValue.name();
+        }
+        if (value instanceof java.time.Instant instant) {
+            return instant.toString();
+        }
+        if (value instanceof TaskGraph taskGraph) {
+            return taskGraphView(taskGraph);
+        }
+        if (value instanceof TaskNode taskNode) {
+            return taskNodeView(taskNode);
+        }
+        if (value instanceof Observation observation) {
+            return observationView(observation);
+        }
+        if (value instanceof VisibleObject visibleObject) {
+            return visibleObjectView(visibleObject);
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> converted = new LinkedHashMap<>();
+            map.forEach((key, item) -> converted.put(String.valueOf(key), jsonValue(item)));
+            return converted;
+        }
+        if (value instanceof Iterable<?> iterable) {
+            List<Object> converted = new ArrayList<>();
+            iterable.forEach(item -> converted.add(jsonValue(item)));
+            return converted;
+        }
+        return String.valueOf(value);
+    }
+
     private Map<String, Object> feedbackDecision(PendingAction action, List<CapabilityDescriptor> capabilities,
-                                                 String status) {
+                                                  String status) {
         Map<String, Object> decision = new LinkedHashMap<>();
         String capabilityName = capabilityName(action, capabilities);
         decision.put("action", "human_feedback");
@@ -562,16 +715,16 @@ public class MarketingHarness {
                 action == null ? Map.of() : Map.of("pendingActionId", action.id())));
         conversationStore.save(session);
         Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("decision", feedbackDecision(action, capabilities, status));
-        metadata.put("state", session.state());
-        metadata.put("visibleObjects", session.visibleObjects().keySet());
+        metadata.put("decision", jsonValue(feedbackDecision(action, capabilities, status)));
+        metadata.put("state", jsonValue(session.state()));
+        metadata.put("visibleObjects", List.copyOf(session.visibleObjects().keySet()));
         metadata.put("pendingActions", session.activePendingActionIds());
         metadata.put("harness", Map.of("runId", runId, "status", status, "mode", "human_feedback",
                 "observationCount", observations.size()));
-        metadata.put("observations", observations);
-        metadata.put("riskAssessments", riskAssessments);
-        metadata.put("harnessTrace", trace);
-        metadata.put("capabilities", capabilities);
+        metadata.put("observations", observations.stream().map(this::observationView).toList());
+        metadata.put("riskAssessments", riskAssessments.stream().map(this::riskAssessmentView).toList());
+        metadata.put("harnessTrace", trace.stream().map(this::traceView).toList());
+        metadata.put("capabilities", capabilities.stream().map(this::capabilityView).toList());
         return new MarketingResponse(request.conversationId(), answer, List.of(), List.of(), metadata);
     }
 

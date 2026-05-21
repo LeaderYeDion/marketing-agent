@@ -6,7 +6,6 @@ import java.util.Map;
 
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
@@ -60,8 +59,10 @@ final class AgenticSubAgentSupport {
     static List<Message> toMessages(String systemMessage, SubAgentInvocation invocation, String userTask,
                                     List<ConversationMessage> history) {
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(systemMessage));
         messages.add(new UserMessage("""
+                Domain operating context:
+                %s
+
                 Invocation:
                 - invocationId: %s
                 - conversationId: %s
@@ -74,6 +75,7 @@ final class AgenticSubAgentSupport {
                 User task:
                 %s
                 """.formatted(
+                nullToBlank(systemMessage),
                 invocation.invocationId(),
                 invocation.conversationId(),
                 invocation.skillName(),
@@ -91,12 +93,13 @@ final class AgenticSubAgentSupport {
     static Message toMessage(ConversationMessage message) {
         String text = "%s [source=%s, eventType=%s]:%n%s".formatted(
                 message.role(), message.source(), message.eventType(), message.content());
-        if (message.role() == MessageRole.SYSTEM) {
-            return new SystemMessage(text);
-        }
         if (message.role() == MessageRole.ASSISTANT) {
             return new AssistantMessage(text);
         }
         return new UserMessage(text);
+    }
+
+    private static String nullToBlank(String value) {
+        return value == null ? "" : value;
     }
 }

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marketing Agent Local Console</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="workspace" aria-label="Marketing Agent chat">
+      <header class="topbar">
+        <div>
+          <h1>Marketing Agent</h1>
+          <p id="status">localhost console</p>
+        </div>
+        <div class="top-actions">
+          <button id="newConversationButton" type="button">新会话</button>
+          <button id="clearButton" type="button">清屏</button>
+        </div>
+      </header>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+
+      <section id="pendingActions" class="pending-actions" hidden></section>
+
+      <form id="chatForm" class="composer">
+        <textarea id="queryInput" rows="4" placeholder="输入一个营销任务，例如：帮我判断活动 A100 的报名规则，并写一段社群通知。"></textarea>
+        <div class="composer-row">
+          <label class="check">
+            <input id="streamToggle" type="checkbox" checked>
+            SSE
+          </label>
+          <button id="sendButton" type="submit">发送</button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="side" aria-label="Request context">
+      <section class="panel">
+        <h2>请求上下文</h2>
+        <label>Conversation ID
+          <input id="conversationIdInput" autocomplete="off">
+        </label>
+        <label>User ID
+          <input id="userIdInput" autocomplete="off" value="local-user">
+        </label>
+        <label>Channel
+          <input id="channelInput" autocomplete="off" placeholder="社群 / 短信 / 小程序">
+        </label>
+        <label>Product
+          <input id="productInput" autocomplete="off" placeholder="商品或活动对象">
+        </label>
+        <label>Audience
+          <input id="audienceInput" autocomplete="off" placeholder="目标人群">
+        </label>
+        <label>Goals
+          <input id="goalsInput" autocomplete="off" placeholder="拉新, 转化, 复购">
+        </label>
+        <label>Variables JSON
+          <textarea id="variablesInput" rows="7" spellcheck="false" placeholder='{"activity_id":"A100"}'></textarea>
+        </label>
+      </section>
+
+      <section class="panel event-panel">
+        <h2>SSE 事件</h2>
+        <pre id="events"></pre>
+      </section>
+    </aside>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

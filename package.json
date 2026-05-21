@@ -1,0 +1,9 @@
+{
+  "name": "marketing-agent-local-console",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "backend": "powershell -ExecutionPolicy Bypass -File scripts/run-backend.ps1",
+    "chat": "node scripts/chat-sse.mjs"
+  }
+}

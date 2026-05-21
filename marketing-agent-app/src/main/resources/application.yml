@@ -1,16 +1,17 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
     name: marketing-agent
   ai:
-    dashscope:
-      api-key: ${DASHSCOPE_API_KEY:}
-      chat:
-        options:
-          model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
-          temperature: 0.2
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:local-missing-gemini-api-key}
+        chat:
+          options:
+            model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+            temperature: 0.2
 
 management:
   endpoints:
@@ -39,8 +40,16 @@ agent:
     top-k: 5
     embedding-dimensions: 384
   llm:
-    default-provider: dashscope
-    default-model: ${DASHSCOPE_CHAT_MODEL:qwen-plus}
+    default-provider: gemini
+    default-model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+    timeout-seconds: ${LLM_TIMEOUT_SECONDS:60}
+    http-proxy:
+      enabled: ${LLM_PROXY_ENABLED:false}
+      host: ${LLM_PROXY_HOST:}
+      port: ${LLM_PROXY_PORT:0}
+    gemini:
+      api-key: ${GEMINI_API_KEY:local-missing-gemini-api-key}
+      model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
     main-agent:
       prompt-version: main-agent-v1
       temperature: 0.2
