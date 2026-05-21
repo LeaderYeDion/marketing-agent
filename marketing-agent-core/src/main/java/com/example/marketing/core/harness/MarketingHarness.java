@@ -128,6 +128,8 @@ public class MarketingHarness {
             PendingAction expired = pendingActionStateMachine.expire(action, request.userId());
             session.updatePendingAction(expired);
             session.updateVisibleObjectStatus(action.visibleObjectId(), "expired");
+            auditEventPublisher.publish(AuditEvent.of("pending_action_expired", request.conversationId(), "harness",
+                    pendingActionAuditData(expired)));
             return finishFeedback(request, session, runId, "feedback_expired",
                     "这个确认动作已经过期，请重新发起。", observations, riskAssessments, trace, capabilities, expired);
         }
@@ -137,6 +139,8 @@ public class MarketingHarness {
             session.updateVisibleObjectStatus(action.visibleObjectId(), "rejected");
             auditEventPublisher.publish(AuditEvent.of("hitl_rejected", request.conversationId(), "harness",
                     Map.of("pendingActionId", action.id())));
+            auditEventPublisher.publish(AuditEvent.of("pending_action_rejected", request.conversationId(),
+                    "harness", pendingActionAuditData(rejected)));
             return finishFeedback(request, session, runId, "feedback_rejected",
                     "已取消这次待确认动作。", observations, riskAssessments, trace, capabilities, rejected);
         }
@@ -146,6 +150,8 @@ public class MarketingHarness {
             session.updateVisibleObjectStatus(action.visibleObjectId(), "edited");
             auditEventPublisher.publish(AuditEvent.of("hitl_edited", request.conversationId(), "harness",
                     Map.of("pendingActionId", action.id())));
+            auditEventPublisher.publish(AuditEvent.of("pending_action_edited", request.conversationId(),
+                    "harness", pendingActionAuditData(edited)));
             return finishFeedback(request, session, runId, "feedback_edited",
                     "已记录你的调整，请重新确认后再执行。", observations, riskAssessments, trace, capabilities, edited);
         }
@@ -155,6 +161,8 @@ public class MarketingHarness {
         session.updateVisibleObjectStatus(action.visibleObjectId(), "approved");
         auditEventPublisher.publish(AuditEvent.of("hitl_approved", request.conversationId(), "harness",
                 Map.of("pendingActionId", action.id(), "sourceAgent", action.sourceAgent())));
+        auditEventPublisher.publish(AuditEvent.of("pending_action_approved", request.conversationId(), "harness",
+                pendingActionAuditData(approved)));
 
         CapabilityDescriptor capability = capabilityForPendingAction(approved, capabilities);
         if (capability == null) {
@@ -185,8 +193,11 @@ public class MarketingHarness {
                 Map.of("pendingActionId", approved.id(), "observationId", observation.id()));
         if (TaskNodeStatus.SUCCEEDED.equals(status)) {
             PendingAction current = session.pendingActions().getOrDefault(approved.id(), approved);
-            session.updatePendingAction(pendingActionStateMachine.executed(current, request.userId()));
+            PendingAction executed = pendingActionStateMachine.executed(current, request.userId());
+            session.updatePendingAction(executed);
             session.updateVisibleObjectStatus(approved.visibleObjectId(), "executed");
+            auditEventPublisher.publish(AuditEvent.of("pending_action_executed", request.conversationId(),
+                    "harness", pendingActionAuditData(executed, observation)));
         }
         RecoveryDecision recovery = recoveryPolicyEngine.decide(capability, completedNode, observation);
         trace(trace, runId, "feedback_recovery_evaluated", capability.name(), recovery.action(),
@@ -362,7 +373,8 @@ public class MarketingHarness {
                 return plannedNode.withInputs(inputs);
             }
         }
-        return TaskNode.pending("feedback_node_1", "Resume approved action " + action.id(), capability.name(),
+        String nodeId = taskNodeId.isBlank() ? "feedback_node_1" : taskNodeId;
+        return TaskNode.pending(nodeId, "Resume approved action " + action.id(), capability.name(),
                 inputs, List.of());
     }
 
@@ -655,14 +667,76 @@ public class MarketingHarness {
                 pending.putIfAbsent("task_graph_id", graph == null ? "" : graph.id());
                 pending.putIfAbsent("task_node_id", observation.taskNodeId());
                 pending.putIfAbsent("capability_name", observation.capabilityName());
-                String sourceAgent = String.valueOf(pending.getOrDefault("source_agent", "activity_enroll_agent"));
-                session.addPendingAction(PendingAction.create(object.id(), object.type(), sourceAgent,
-                        observation.id(), object.id(), pending));
+                PendingAction action = buildPendingAction(session, graph, observation, object, pending);
+                session.addPendingAction(action);
+                auditEventPublisher.publish(AuditEvent.of("pending_action_created", session.conversationId(),
+                        "harness", pendingActionAuditData(action, observation)));
             }
         });
         if (!observation.statePatch().isEmpty()) {
             session.state().putAll(observation.statePatch());
         }
+    }
+
+    private PendingAction buildPendingAction(ConversationSession session, TaskGraph graph, Observation observation,
+                                             VisibleObject object, Map<String, Object> rawPayload) {
+        Map<String, Object> payload = new LinkedHashMap<>(rawPayload == null ? Map.of() : rawPayload);
+        String capabilityName = firstNonBlank(stringValue(payload.get("capability_name")),
+                stringValue(payload.get("skill_name")), observation.capabilityName());
+        if (capabilityName.isBlank() || capabilityRegistry.find(capabilityName).isEmpty()) {
+            throw new IllegalStateException("Pending action is missing a registered capability binding: "
+                    + object.id());
+        }
+        String graphId = firstNonBlank(stringValue(payload.get("task_graph_id")),
+                graph == null ? "" : graph.id());
+        if (graphId.isBlank()) {
+            throw new IllegalStateException("Pending action is missing task graph binding: " + object.id());
+        }
+        String taskNodeId = firstNonBlank(stringValue(payload.get("task_node_id")),
+                observation.taskNodeId() + "_approved_execution");
+        if (taskNodeId.isBlank()) {
+            throw new IllegalStateException("Pending action is missing task node binding: " + object.id());
+        }
+        String idempotencyKey = firstNonBlank(stringValue(payload.get("idempotency_key")),
+                "pending_action:" + graphId + ":" + taskNodeId + ":" + capabilityName);
+        CapabilityDescriptor capability = capabilityRegistry.find(capabilityName)
+                .orElseThrow(() -> new IllegalStateException("Unknown pending action capability: " + capabilityName));
+        payload.put("visible_object_id", object.id());
+        payload.put("task_graph_id", graphId);
+        payload.put("task_node_id", taskNodeId);
+        payload.put("capability_name", capabilityName);
+        payload.put("idempotency_key", idempotencyKey);
+        payload.putIfAbsent("approval_source", "harness_pending_action_builder");
+        payload.put("source_observation_id", observation.id());
+        payload.put("source_task_node_id", observation.taskNodeId());
+        payload.put("source_capability_name", observation.capabilityName());
+        payload.put("source_provider", capability.provider());
+        String sourceAgent = firstNonBlank(stringValue(payload.get("source_agent")), capability.provider(), "harness");
+        return PendingAction.create(object.id(), object.type(), sourceAgent, observation.id(), object.id(), payload);
+    }
+
+    private Map<String, Object> pendingActionAuditData(PendingAction action) {
+        return pendingActionAuditData(action, null);
+    }
+
+    private Map<String, Object> pendingActionAuditData(PendingAction action, Observation observation) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("pendingActionId", action.id());
+        data.put("status", action.status().name());
+        data.put("visibleObjectId", action.visibleObjectId());
+        data.put("sourceAgent", action.sourceAgent());
+        data.put("invocationId", action.invocationId());
+        data.put("taskGraphId", stringValue(action.payload().get("task_graph_id")));
+        data.put("taskNodeId", stringValue(action.payload().get("task_node_id")));
+        data.put("capabilityName", stringValue(action.payload().get("capability_name")));
+        data.put("idempotencyKey", stringValue(action.payload().get("idempotency_key")));
+        data.put("approvalSource", stringValue(action.payload().get("approval_source")));
+        if (observation != null) {
+            data.put("observationId", observation.id());
+            data.put("observationStatus", observation.status());
+            data.put("operationReceipt", observation.artifacts().getOrDefault("operation_receipt", Map.of()));
+        }
+        return data;
     }
 
     private Map<String, Object> enrichInputs(Map<String, Object> inputs, List<Observation> observations) {
@@ -999,10 +1073,7 @@ public class MarketingHarness {
         if (!explicit.isBlank()) {
             return capabilityRegistry.find(explicit).orElse(null);
         }
-        return capabilities.stream()
-                .filter(capability -> capability.provider().equals(action.sourceAgent()))
-                .findFirst()
-                .orElse(null);
+        return null;
     }
 
     private String capabilityName(PendingAction action, List<CapabilityDescriptor> capabilities) {
@@ -1017,11 +1088,7 @@ public class MarketingHarness {
         if (capabilityRegistry.find(skillName).isPresent()) {
             return skillName;
         }
-        return capabilities.stream()
-                .filter(capability -> capability.provider().equals(action.sourceAgent()))
-                .map(CapabilityDescriptor::name)
-                .findFirst()
-                .orElse("");
+        return "";
     }
 
     private String capabilityProvider(PendingAction action, List<CapabilityDescriptor> capabilities) {
@@ -1050,6 +1117,17 @@ public class MarketingHarness {
 
     private String stringValue(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private String firstNonBlank(String first, String fallback) {
+        return first == null || first.isBlank() ? fallback : first;
+    }
+
+    private String firstNonBlank(String first, String second, String fallback) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second == null || second.isBlank() ? fallback : second;
     }
 
     private record NodeExecutionPlan(TaskNode node, CapabilityDescriptor capability) {

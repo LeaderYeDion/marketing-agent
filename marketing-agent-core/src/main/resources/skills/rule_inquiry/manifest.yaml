@@ -2,7 +2,7 @@ name: rule_inquiry
 version: 1.0.0
 summary: Answer marketing activity, promotion, enrollment status, and rule questions with grounded context.
 intentHints: ask activity rules, explain enrollment status, explain promotion rules, interpret confirmation card
-entryAgent: inquiry_agent
+entryAgent: rule_inquiry_provider
 requiredInputs: question
 canEmit: markdown, citations
 outputContract: grounded_answer, citations, sufficiency_judgement
@@ -10,7 +10,7 @@ permissions: knowledge.retrieve
 sideEffects: false
 requiresHumanApproval: false
 riskLevel: low
-composableWith: activity_enroll, copywriting
+composableWith: activity_rule_check, enrollment_preview_create, copywriting, notification_copywriting
 fallbackSkills:
 preconditions: question is available
 postconditions: answer cites or explains evidence limits

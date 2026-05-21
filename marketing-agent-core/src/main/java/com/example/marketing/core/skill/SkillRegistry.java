@@ -113,16 +113,9 @@ public class SkillRegistry {
     private List<SkillDescriptor> fallbackDescriptors() {
         return List.of(
                 new SkillDescriptor(
-                        "activity_enroll",
-                        "Handle Excel based marketing activity enrollment with HITL confirmation.",
-                        "activity_enroll_agent",
-                        List.of("excel_file_path", "activity_id"),
-                        List.of("markdown", "status", "hitl_card", "result_card")
-                ),
-                new SkillDescriptor(
                         "rule_inquiry",
                         "Answer marketing activity, promotion, enrollment and rule questions.",
-                        "inquiry_agent",
+                        "rule_inquiry_provider",
                         List.of("question"),
                         List.of("markdown", "citations")
                 ),

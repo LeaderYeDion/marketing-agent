@@ -1,4 +1,3 @@
-activity_enroll
 spreadsheet_summarize
 spreadsheet_query_product
 activity_rule_check

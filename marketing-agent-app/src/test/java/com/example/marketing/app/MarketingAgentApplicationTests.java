@@ -92,6 +92,41 @@ class MarketingAgentApplicationTests {
         assertThat(capabilities).contains("enrollment_preview_create");
         assertThat(capabilities).contains("enrollment_execute");
         assertThat(capabilities).contains("notification_copywriting");
+        assertThat(capabilityNames(response)).doesNotContain("activity_enroll");
+        assertThat(capabilityProviders(response)).contains("rule_inquiry_provider");
+        assertThat(capabilityProviders(response)).doesNotContain("inquiry_agent", "activity_enroll_agent");
+    }
+
+    @Test
+    void legacyActivityEnrollSkillIsNotAvailableOnClasspath() {
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+
+        assertThat(classLoader.getResource("skills/activity_enroll/manifest.yaml")).isNull();
+        assertThat(classLoader.getResource("skills/activity_enroll/skill.md")).isNull();
+    }
+
+    @Test
+    void enrollmentPreviewCreatesFullyBoundPendingAction(@TempDir Path tempDir) throws Exception {
+        Path csv = tempDir.resolve("enroll.csv");
+        Files.writeString(csv, "product_id,price\n123,99\n");
+        MarketingResponse response = marketingAgentService.run(new MarketingRequest(
+                null,
+                "demo-user",
+                "create_enrollment_preview",
+                "社群",
+                "",
+                "",
+                List.of("生成报名预览"),
+                Map.of("excel_file_path", csv.toString(), "activity_id", "A100")
+        ));
+
+        String observations = String.valueOf(response.metadata().get("observations"));
+        assertThat(response.answer()).contains("确认后才会执行报名");
+        assertThat(observations).contains("waiting_for_approval");
+        assertThat(observations).contains("capability_name=enrollment_execute");
+        assertThat(observations).contains("task_graph_id=");
+        assertThat(observations).contains("task_node_id=node_1_approved_execution");
+        assertThat(observations).contains("idempotency_key=activity_enroll:");
     }
 
     @Test
@@ -196,6 +231,26 @@ class MarketingAgentApplicationTests {
                                 }
                                 """;
                     }
+                    if (messages.stream().anyMatch(message -> message.content().contains("create_enrollment_preview"))) {
+                        return """
+                                {
+                                  "rationale": "The user wants a preview card before executing activity enrollment.",
+                                  "answerStrategy": "Create a preview and pause at the HITL boundary.",
+                                  "nodes": [
+                                    {
+                                      "id": "node_1",
+                                      "goal": "Create an activity enrollment preview for approval.",
+                                      "capabilityName": "enrollment_preview_create",
+                                      "dependsOn": [],
+                                      "inputs": {},
+                                      "completionCriteria": "A pending action proposal is created.",
+                                      "priority": 100,
+                                      "rationale": "Preview is the safe proposal boundary before enrollment_execute."
+                                    }
+                                  ]
+                                }
+                                """;
+                    }
                     if (messages.stream().anyMatch(message -> message.content().contains("invalid_dependency_plan"))) {
                         return """
                                 {
@@ -255,5 +310,23 @@ class MarketingAgentApplicationTests {
                 }
             };
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> capabilityNames(MarketingResponse response) {
+        Object capabilities = response.metadata().get("capabilities");
+        assertThat(capabilities).isInstanceOf(List.class);
+        return ((List<Map<String, Object>>) capabilities).stream()
+                .map(capability -> String.valueOf(capability.get("name")))
+                .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> capabilityProviders(MarketingResponse response) {
+        Object capabilities = response.metadata().get("capabilities");
+        assertThat(capabilities).isInstanceOf(List.class);
+        return ((List<Map<String, Object>>) capabilities).stream()
+                .map(capability -> String.valueOf(capability.get("provider")))
+                .toList();
     }
 }

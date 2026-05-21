@@ -129,7 +129,9 @@ public class ActivityEnrollmentCapabilityProvider implements CapabilityProvider 
                     summaryResult.userSafeMessage(), summaryResult.errorCode(), summaryResult.retryable());
         }
         String cardId = "confirm_enroll_" + UUID.randomUUID().toString().substring(0, 8);
-        String idempotencyKey = "activity_enroll:" + request.conversationId() + ":" + cardId;
+        String executionNodeId = request.taskNodeId() + "_approved_execution";
+        String idempotencyKey = "activity_enroll:" + request.conversationId() + ":" + request.taskGraphId()
+                + ":" + executionNodeId;
         Map<String, Object> diff = new LinkedHashMap<>();
         diff.put("operation", "activity_enrollment");
         diff.put("activity_id", activityId);
@@ -141,10 +143,17 @@ public class ActivityEnrollmentCapabilityProvider implements CapabilityProvider 
         cardData.put("source_agent", providerName());
         cardData.put("capability_name", "enrollment_execute");
         cardData.put("task_graph_id", request.taskGraphId());
-        cardData.put("task_node_id", "");
+        cardData.put("task_node_id", executionNodeId);
         cardData.put("activity_id", activityId);
         cardData.put("excel_file_path", path);
         cardData.put("idempotency_key", idempotencyKey);
+        cardData.put("approval_source", "enrollment_preview_create");
+        cardData.put("execution_node_descriptor", Map.of(
+                "id", executionNodeId,
+                "capability_name", "enrollment_execute",
+                "depends_on", List.of(request.taskNodeId()),
+                "resume_from_observation_id", ""
+        ));
         cardData.put("execution_diff", diff);
         cardData.put("actions", List.of(
                 Map.of("id", "confirm", "label", "确认报名", "enabled", true),

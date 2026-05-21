@@ -10,7 +10,7 @@ permissions: content.generate
 sideEffects: false
 requiresHumanApproval: false
 riskLevel: low
-composableWith: rule_inquiry, activity_enroll
+composableWith: rule_inquiry, activity_rule_check, enrollment_preview_create, notification_copywriting
 fallbackSkills: rule_inquiry
 preconditions: user goal or upstream observation is available
 postconditions: draft reflects channel, product, audience, and source observations
