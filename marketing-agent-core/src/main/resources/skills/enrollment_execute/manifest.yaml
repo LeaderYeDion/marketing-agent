@@ -1,0 +1,19 @@
+name: enrollment_execute
+version: 1.0.0
+summary: Execute an approved activity enrollment using the exact payload bound to a pending action.
+intentHints: execute approved enrollment, confirm registration, run activity enrollment after approval
+entryAgent: activity_enrollment_provider
+requiredInputs: excel_file_path, activity_id, pending_action_approved, idempotency_key
+canEmit: observation, operation_receipt, audit_reference
+outputContract: operation_id, idempotency_key, operation_receipt
+permissions: operation.activity_enroll
+sideEffects: true
+requiresHumanApproval: true
+riskLevel: high
+composableWith: notification_copywriting, copywriting
+fallbackSkills:
+preconditions: pending_action_approved is true because PendingActionStateMachine approved the action
+postconditions: enrollment operation is recorded idempotently and auditable
+owner: marketing-operations
+skillResource: /skills/enrollment_execute/skill.md
+evalSuites: activity_enroll_decomposed

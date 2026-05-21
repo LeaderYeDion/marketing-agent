@@ -1,0 +1,19 @@
+name: enrollment_preview_create
+version: 1.0.0
+summary: Create a human-reviewable enrollment preview and confirmation card without executing the enrollment.
+intentHints: create enrollment preview, prepare registration confirmation, ask user to confirm enrollment, generate HITL card
+entryAgent: activity_enrollment_provider
+requiredInputs: excel_file_path, activity_id
+canEmit: observation, hitl_card, enrollment_preview, action_proposal
+outputContract: enrollment_preview, execution_diff, pending_action_payload, hitl_card
+permissions: file.read.excel
+sideEffects: false
+requiresHumanApproval: false
+riskLevel: medium
+composableWith: enrollment_execute, notification_copywriting, copywriting
+fallbackSkills: spreadsheet_summarize, rule_inquiry
+preconditions: excel_file_path and activity_id are available
+postconditions: a pending action proposal for enrollment_execute is created
+owner: marketing-operations
+skillResource: /skills/enrollment_preview_create/skill.md
+evalSuites: activity_enroll_decomposed

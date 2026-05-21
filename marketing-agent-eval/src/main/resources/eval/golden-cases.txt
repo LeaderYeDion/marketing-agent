@@ -12,11 +12,11 @@ forbidden=already executed enrollment
 id=activity_enroll_001
 query=Enroll these coupons for activity A100 using the provided Excel.
 expectedAction=execute_task_graph
-expectedSkillName=activity_enroll
-expectedDelegateTo=activity_enroll_agent
-expectedCapabilities=activity_enroll
+expectedSkillName=enrollment_preview_create
+expectedDelegateTo=activity_enrollment_provider
+expectedCapabilities=spreadsheet_summarize,enrollment_preview_create
 expectedHarnessStatus=
-minTaskNodes=1
+minTaskNodes=2
 mustContain=
 forbidden=already executed enrollment
 ---

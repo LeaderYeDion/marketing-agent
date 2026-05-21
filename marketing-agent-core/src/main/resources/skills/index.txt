@@ -1,3 +1,9 @@
 activity_enroll
+spreadsheet_summarize
+spreadsheet_query_product
+activity_rule_check
+enrollment_preview_create
+enrollment_execute
 rule_inquiry
 copywriting
+notification_copywriting

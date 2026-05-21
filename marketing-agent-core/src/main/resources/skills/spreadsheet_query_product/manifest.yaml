@@ -1,0 +1,19 @@
+name: spreadsheet_query_product
+version: 1.0.0
+summary: Query spreadsheet rows for a product id, SKU, product name, price, or keyword and return matched rows as evidence.
+intentHints: find product in Excel, query SKU, lookup price from spreadsheet, search registration rows
+entryAgent: activity_enrollment_provider
+requiredInputs: excel_file_path, product_id
+canEmit: observation, product_rows, evidence
+outputContract: matched_rows, matched_count, headers, product_rows
+permissions: file.read.excel
+sideEffects: false
+requiresHumanApproval: false
+riskLevel: low
+composableWith: spreadsheet_summarize, activity_rule_check, enrollment_preview_create, notification_copywriting, copywriting
+fallbackSkills: spreadsheet_summarize, rule_inquiry
+preconditions: excel_file_path is readable and product_id or keyword is available
+postconditions: matched product rows are available as observation evidence
+owner: marketing-operations
+skillResource: /skills/spreadsheet_query_product/skill.md
+evalSuites: activity_enroll_decomposed

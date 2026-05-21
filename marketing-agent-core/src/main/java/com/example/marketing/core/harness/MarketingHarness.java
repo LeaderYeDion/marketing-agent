@@ -29,6 +29,8 @@ import com.example.marketing.core.model.PendingActionStateMachine;
 import com.example.marketing.core.model.VisibleObject;
 import com.example.marketing.core.observation.ActionProposal;
 import com.example.marketing.core.observation.Observation;
+import com.example.marketing.core.observation.ObservationEvaluation;
+import com.example.marketing.core.observation.ObservationEvaluator;
 import com.example.marketing.core.observability.AgentTelemetry;
 import com.example.marketing.core.policy.RiskAssessment;
 import com.example.marketing.core.policy.RiskPolicyEngine;
@@ -54,6 +56,8 @@ public class MarketingHarness {
     private final AuditEventPublisher auditEventPublisher;
     private final AgentTelemetry telemetry;
     private final PendingActionStateMachine pendingActionStateMachine;
+    private final TaskGraphValidator taskGraphValidator;
+    private final ObservationEvaluator observationEvaluator;
 
     public MarketingHarness(ConversationStore conversationStore,
                             ConversationLockManager conversationLockManager,
@@ -65,7 +69,9 @@ public class MarketingHarness {
                             RecoveryPolicyEngine recoveryPolicyEngine,
                             AuditEventPublisher auditEventPublisher,
                             AgentTelemetry telemetry,
-                            PendingActionStateMachine pendingActionStateMachine) {
+                            PendingActionStateMachine pendingActionStateMachine,
+                            TaskGraphValidator taskGraphValidator,
+                            ObservationEvaluator observationEvaluator) {
         this.conversationStore = conversationStore;
         this.conversationLockManager = conversationLockManager;
         this.capabilityRegistry = capabilityRegistry;
@@ -77,6 +83,8 @@ public class MarketingHarness {
         this.auditEventPublisher = auditEventPublisher;
         this.telemetry = telemetry;
         this.pendingActionStateMachine = pendingActionStateMachine;
+        this.taskGraphValidator = taskGraphValidator;
+        this.observationEvaluator = observationEvaluator;
     }
 
     public MarketingResponse run(MarketingRequest request) {
@@ -95,6 +103,7 @@ public class MarketingHarness {
                 Map.of("variables", request.variables() == null ? Map.of() : request.variables())));
         List<HarnessTraceEvent> trace = new ArrayList<>();
         List<Observation> observations = new ArrayList<>();
+        List<ObservationEvaluation> evaluations = new ArrayList<>();
         List<RiskAssessment> riskAssessments = new ArrayList<>();
         List<CapabilityDescriptor> capabilities = capabilityRegistry.list();
         trace(trace, runId, "human_feedback_received", "harness", feedback.decision(),
@@ -167,6 +176,8 @@ public class MarketingHarness {
         Observation observation = executeCapability(runId, graph, node, capability, context, request, session);
         observations.add(observation);
         commitObservation(session, observation, graph);
+        ObservationEvaluation evaluation = observationEvaluator.evaluate(capability, node, observation);
+        evaluations.add(evaluation);
         TaskNodeStatus status = statusFor(observation);
         TaskNode completedNode = node.withObservation(status, observation.id());
         graph = graph.withNode(completedNode);
@@ -177,14 +188,15 @@ public class MarketingHarness {
             session.updatePendingAction(pendingActionStateMachine.executed(current, request.userId()));
             session.updateVisibleObjectStatus(approved.visibleObjectId(), "executed");
         }
-        RecoveryDecision recovery = recoveryPolicyEngine.decide(capability, observation);
+        RecoveryDecision recovery = recoveryPolicyEngine.decide(capability, completedNode, observation);
         trace(trace, runId, "feedback_recovery_evaluated", capability.name(), recovery.action(),
-                Map.of("reason", recovery.reason(), "fallback", recovery.fallbackCapability()));
+                Map.of("reason", recovery.reason(), "fallback", recovery.fallbackCapability(),
+                        "evaluation", evaluation));
         graph = applyRecoveryIfNeeded(graph, completedNode, capability, observation, recovery, observations, trace,
-                runId);
+                runId, request, context);
         if (graph.hasPendingNodes() && !graph.isPausedOrTerminal()) {
             HarnessContext resumedContext = contextAssembler.assemble(request, session, capabilities);
-            graph = executePlannedGraph(runId, request, session, resumedContext, graph, observations,
+            graph = executePlannedGraph(runId, request, session, resumedContext, graph, observations, evaluations,
                     riskAssessments, trace);
         }
         session.state().put("last_task_graph", graph);
@@ -200,7 +212,8 @@ public class MarketingHarness {
                         .flatMap(item -> item.visibleObjects().stream())
                         .map(VisibleObject::title)
                         .toList(),
-                metadata(request, session, graph, observations, riskAssessments, trace, capabilities));
+                metadata(request, session, graph, observations, evaluations, riskAssessments, trace, capabilities,
+                        null));
     }
 
     private MarketingResponse runLocked(MarketingRequest request) {
@@ -213,21 +226,56 @@ public class MarketingHarness {
         HarnessContext context = contextAssembler.assemble(request, session, capabilities);
         List<HarnessTraceEvent> trace = new ArrayList<>();
         List<Observation> observations = new ArrayList<>();
+        List<ObservationEvaluation> evaluations = new ArrayList<>();
         List<RiskAssessment> riskAssessments = new ArrayList<>();
 
         trace(trace, runId, "context_assembled", "harness", "succeeded",
                 Map.of("capabilityCount", capabilities.size(), "visibleObjects",
                         context.memory().visibleObjects().size()));
 
+        TaskGraph resumed = resumeWaitingGraphIfPossible(request, session, capabilities, trace, runId);
+        if (resumed != null) {
+            resumed = executePlannedGraph(runId, request, session, context, resumed, observations, evaluations,
+                    riskAssessments, trace);
+            session.state().put("last_task_graph", resumed);
+            session.state().put("task_memory", Map.of(
+                    "last_task_graph_id", resumed.id(),
+                    "last_task_graph_status", resumed.status(),
+                    "last_task_count", resumed.nodes().size()
+            ));
+            session.state().put("decision_memory", Map.of(
+                    "last_run_id", runId,
+                    "last_observation_count", observations.size(),
+                    "last_status", resumed.status(),
+                    "resumed_waiting_graph", true
+            ));
+            conversationStore.save(session);
+            return new MarketingResponse(request.conversationId(), answerFor(resumed, observations), List.of(),
+                    observations.stream()
+                            .flatMap(observation -> observation.visibleObjects().stream())
+                            .map(VisibleObject::title)
+                            .toList(),
+                    metadata(request, session, resumed, observations, evaluations, riskAssessments, trace,
+                            capabilities, null));
+        }
+
         TaskGraph graph = taskPlanner.plan(request, context);
+        TaskGraphValidationResult validation = taskGraphValidator.validateAndRepair(graph);
+        graph = validation.graph() == null ? graph.withStatus("failed") : validation.graph();
         trace(trace, runId, "task_graph_planned", "planner", graph.status(),
                 Map.of("taskGraphId", graph.id(), "nodeCount", graph.nodes().size()));
+        trace(trace, runId, "task_graph_validated", "validator", validation.valid() ? "valid" : "invalid",
+                Map.of("errors", validation.errors(), "warnings", validation.warnings(),
+                        "repairs", validation.repairs()));
         telemetry.event("task_graph_planned", "harness", graph.status(),
                 Map.of("taskGraphId", graph.id(), "nodeCount", graph.nodes().size()));
         auditEventPublisher.publish(AuditEvent.of("task_graph_planned", request.conversationId(), "harness",
                 Map.of("runId", runId, "taskGraphId", graph.id(), "nodeCount", graph.nodes().size())));
 
-        graph = executePlannedGraph(runId, request, session, context, graph, observations, riskAssessments, trace);
+        if (validation.valid()) {
+            graph = executePlannedGraph(runId, request, session, context, graph, observations, evaluations,
+                    riskAssessments, trace);
+        }
 
         session.state().put("last_task_graph", graph);
         session.state().put("task_memory", Map.of(
@@ -248,7 +296,49 @@ public class MarketingHarness {
                 .map(VisibleObject::title)
                 .toList();
         return new MarketingResponse(request.conversationId(), answer, List.of(), visibleObjectTitles,
-                metadata(request, session, graph, observations, riskAssessments, trace, capabilities));
+                metadata(request, session, graph, observations, evaluations, riskAssessments, trace, capabilities,
+                        validation));
+    }
+
+    private TaskGraph resumeWaitingGraphIfPossible(MarketingRequest request, ConversationSession session,
+                                                   List<CapabilityDescriptor> capabilities,
+                                                   List<HarnessTraceEvent> trace, String runId) {
+        Object value = session.state().get("last_task_graph");
+        if (!(value instanceof TaskGraph graph) || !"waiting_for_user".equals(graph.status())) {
+            return null;
+        }
+        TaskNode waitingNode = graph.nodes().stream()
+                .filter(node -> TaskNodeStatus.WAITING_FOR_USER.equals(node.status()))
+                .findFirst()
+                .orElse(null);
+        if (waitingNode == null) {
+            return null;
+        }
+        CapabilityDescriptor capability = capabilityRegistry.find(waitingNode.capabilityName()).orElse(null);
+        if (capability == null) {
+            return null;
+        }
+        Map<String, Object> mergedInputs = new LinkedHashMap<>(waitingNode.inputs());
+        if (request.variables() != null) {
+            mergedInputs.putAll(request.variables());
+        }
+        List<String> missing = missingRequiredInputs(capability, mergedInputs);
+        if (missing.size() == 1 && request.query() != null && !request.query().isBlank()
+                && !mergedInputs.containsKey(missing.getFirst())) {
+            mergedInputs.put(missing.getFirst(), request.query());
+            missing = missingRequiredInputs(capability, mergedInputs);
+        }
+        if (!missing.isEmpty()) {
+            trace(trace, runId, "waiting_graph_still_missing_inputs", capability.name(), "waiting_for_user",
+                    Map.of("taskGraphId", graph.id(), "taskNodeId", waitingNode.id(), "missingInputs", missing));
+            return null;
+        }
+        TaskNode resumedNode = waitingNode.withInputs(mergedInputs).withStatus(TaskNodeStatus.PENDING);
+        TaskGraph resumed = graph.withNode(resumedNode).withStatus("running");
+        session.state().remove("waiting_node");
+        trace(trace, runId, "waiting_graph_resumed", capability.name(), "running",
+                Map.of("taskGraphId", resumed.id(), "taskNodeId", resumedNode.id()));
+        return resumed;
     }
 
     private TaskGraph graphForFeedback(ConversationSession session, PendingAction action) {
@@ -278,6 +368,7 @@ public class MarketingHarness {
 
     private TaskGraph executePlannedGraph(String runId, MarketingRequest request, ConversationSession session,
                                           HarnessContext context, TaskGraph graph, List<Observation> observations,
+                                          List<ObservationEvaluation> evaluations,
                                           List<RiskAssessment> riskAssessments, List<HarnessTraceEvent> trace) {
         TaskGraph current = graph.withStatus("running");
         while (current.hasPendingNodes() && !current.isPausedOrTerminal()) {
@@ -307,10 +398,35 @@ public class MarketingHarness {
                 Map<String, Object> nodeInputs = enrichInputs(node.inputs(), dependencyObservations(node,
                         observations));
                 TaskNode runningNode = node.withInputs(nodeInputs).withStatus(TaskNodeStatus.RUNNING);
+                List<String> missingInputs = missingRequiredInputs(capability, nodeInputs);
+                if (!missingInputs.isEmpty()) {
+                    Observation waiting = waitingForUserObservation(runId, current, runningNode, capability,
+                            missingInputs);
+                    observations.add(waiting);
+                    commitObservation(session, waiting, current);
+                    TaskNode waitingNode = runningNode.withObservation(TaskNodeStatus.WAITING_FOR_USER, waiting.id());
+                    current = current.withNode(waitingNode);
+                    trace(trace, runId, "node_waiting_for_user", capability.name(), waiting.status(),
+                            Map.of("taskNodeId", node.id(), "missingInputs", missingInputs,
+                                    "observationId", waiting.id()));
+                    continue;
+                }
                 RiskAssessment risk = riskPolicyEngine.assess(capability, runningNode, nodeInputs);
                 riskAssessments.add(risk);
                 runningNode = runningNode.withRisk(risk.riskLevel());
                 current = current.withNode(runningNode);
+                if (risk.requiresApproval()) {
+                    Observation waiting = waitingForApprovalObservation(runId, current, runningNode, capability, risk);
+                    observations.add(waiting);
+                    commitObservation(session, waiting, current);
+                    TaskNode waitingNode = runningNode.withObservation(TaskNodeStatus.WAITING_FOR_APPROVAL,
+                            waiting.id());
+                    current = current.withNode(waitingNode);
+                    trace(trace, runId, "hitl_boundary_enforced", capability.name(), waiting.status(),
+                            Map.of("taskNodeId", node.id(), "risk", risk.riskLevel(),
+                                    "observationId", waiting.id()));
+                    continue;
+                }
                 executionPlans.add(new NodeExecutionPlan(runningNode, capability));
                 trace(trace, runId, "capability_selected", capability.name(), "running",
                         Map.of("taskNodeId", node.id(), "risk", risk.riskLevel(), "requiresApproval",
@@ -329,26 +445,105 @@ public class MarketingHarness {
                 Observation observation = result.observation();
                 observations.add(observation);
                 commitObservation(session, observation, current);
+                ObservationEvaluation evaluation = observationEvaluator.evaluate(result.capability(), result.node(),
+                        observation);
+                evaluations.add(evaluation);
                 TaskNodeStatus status = statusFor(observation);
                 TaskNode completedNode = result.node().withObservation(status, observation.id());
                 current = current.withNode(completedNode);
                 trace(trace, runId, "observation_recorded", result.capability().name(), observation.status(),
                         Map.of("taskNodeId", result.node().id(), "observationId", observation.id()));
 
-                RecoveryDecision recovery = recoveryPolicyEngine.decide(result.capability(), observation);
+                RecoveryDecision recovery = recoveryPolicyEngine.decide(result.capability(), completedNode,
+                        observation);
                 trace(trace, runId, "recovery_evaluated", result.capability().name(), recovery.action(),
-                        Map.of("reason", recovery.reason(), "fallback", recovery.fallbackCapability()));
+                        Map.of("reason", recovery.reason(), "fallback", recovery.fallbackCapability(),
+                                "evaluation", evaluation));
                 current = applyRecoveryIfNeeded(current, completedNode, result.capability(), observation, recovery,
-                        observations, trace, runId);
+                        observations, trace, runId, request, context);
             }
         }
         return current;
     }
 
+    private Observation waitingForUserObservation(String runId, TaskGraph graph, TaskNode node,
+                                                  CapabilityDescriptor capability, List<String> missingInputs) {
+        return new Observation(null, runId, node.id(), capability.name(), "waiting_for_user",
+                "我需要补充信息才能继续执行 " + capability.name() + "：" + String.join("、", missingInputs),
+                Map.of("expected_schema", capability.inputSchema(), "task_graph_id", graph.id(),
+                        "task_node_id", node.id()),
+                Map.of(), 0.2, missingInputs, "low", false, null, "MISSING_INPUTS", false,
+                List.of(),
+                List.of(ConversationMessage.assistant("我需要补充信息：" + String.join("、", missingInputs),
+                        "harness", "waiting_for_user",
+                        Map.of("taskGraphId", graph.id(), "taskNodeId", node.id(),
+                                "missingInputs", missingInputs))),
+                Map.of("waiting_node", Map.of(
+                        "task_graph_id", graph.id(),
+                        "task_node_id", node.id(),
+                        "capability_name", capability.name(),
+                        "missing_inputs", missingInputs,
+                        "expected_schema", capability.inputSchema()
+                )));
+    }
+
+    private Observation waitingForApprovalObservation(String runId, TaskGraph graph, TaskNode node,
+                                                      CapabilityDescriptor capability, RiskAssessment risk) {
+        String cardId = "confirm_" + node.id() + "_" + UUID.randomUUID().toString().substring(0, 8);
+        String idempotencyKey = "pending_action:" + graph.id() + ":" + node.id() + ":" + capability.name();
+        Map<String, Object> diff = new LinkedHashMap<>();
+        diff.put("capability_name", capability.name());
+        diff.put("goal", node.goal());
+        diff.put("inputs", node.inputs());
+        diff.put("side_effects", capability.sideEffects());
+        diff.put("permissions", capability.permissions());
+        Map<String, Object> payload = new LinkedHashMap<>(node.inputs());
+        payload.put("source_agent", capability.provider().isBlank() ? "harness" : capability.provider());
+        payload.put("capability_name", capability.name());
+        payload.put("task_graph_id", graph.id());
+        payload.put("task_node_id", node.id());
+        payload.put("idempotency_key", idempotencyKey);
+        payload.put("risk_level", capability.riskLevel());
+        payload.put("approval_source", "harness_risk_policy");
+        payload.put("execution_diff", diff);
+        payload.put("actions", List.of(
+                Map.of("id", "confirm", "label", "确认执行", "enabled", true),
+                Map.of("id", "cancel", "label", "取消", "enabled", true),
+                Map.of("id", "modify", "label", "我要调整", "enabled", true)
+        ));
+        String summary = "该动作会产生业务副作用，需要你确认后才能执行：" + node.goal();
+        VisibleObject card = VisibleObject.of(cardId, "hitl_confirmation", "确认执行：" + capability.name(),
+                "pending", summary, payload);
+        ActionProposal proposal = new ActionProposal(cardId, "hitl_confirmation", capability.name(), summary,
+                payload, capability.riskLevel());
+        return new Observation(
+                null,
+                runId,
+                node.id(),
+                capability.name(),
+                "waiting_for_approval",
+                summary,
+                Map.of("risk_reason", risk.reason(), "harness_boundary", "provider_not_invoked_before_approval"),
+                Map.of("idempotency_key", idempotencyKey, "execution_diff", diff),
+                0.9,
+                List.of(),
+                capability.riskLevel(),
+                true,
+                proposal,
+                "",
+                false,
+                List.of(card),
+                List.of(ConversationMessage.assistant(summary, "harness", "waiting_for_approval",
+                        Map.of("pendingActionId", cardId, "capability", capability.name()))),
+                Map.of("current_task", Map.of("type", capability.name(), "status", "waiting_for_approval",
+                        "task_graph_id", graph.id(), "task_node_id", node.id()))
+        );
+    }
+
     private TaskGraph applyRecoveryIfNeeded(TaskGraph graph, TaskNode node, CapabilityDescriptor capability,
                                             Observation observation, RecoveryDecision recovery,
                                             List<Observation> observations, List<HarnessTraceEvent> trace,
-                                            String runId) {
+                                            String runId, MarketingRequest request, HarnessContext context) {
         if (!TaskNodeStatus.FAILED.equals(statusFor(observation))) {
             return graph;
         }
@@ -378,6 +573,19 @@ public class MarketingHarness {
             return graph.withNode(skippedOriginal)
                     .redirectDependents(node.id(), fallbackNode.id())
                     .appendNode(fallbackNode);
+        }
+        if ("replan".equals(recovery.action())) {
+            TaskGraph replanned = taskPlanner.replan(request, context, graph, observations, recovery.reason());
+            TaskGraphValidationResult validation = taskGraphValidator.validateAndRepair(replanned);
+            trace(trace, runId, "replan_scheduled", "planner", validation.valid() ? "planned" : "failed",
+                    Map.of("previousTaskGraphId", graph.id(), "nextTaskGraphId", replanned.id(),
+                            "reason", recovery.reason(), "validationErrors", validation.errors(),
+                            "validationRepairs", validation.repairs()));
+            if (!validation.valid()) {
+                return graph.withNode(node.withObservation(TaskNodeStatus.FAILED, observation.id()))
+                        .withStatus("failed");
+            }
+            return validation.graph().withStatus("running");
         }
         return graph;
     }
@@ -469,6 +677,24 @@ public class MarketingHarness {
         return enriched;
     }
 
+    private List<String> missingRequiredInputs(CapabilityDescriptor capability, Map<String, Object> inputs) {
+        if (capability.requiredInputs().isEmpty()) {
+            return List.of();
+        }
+        return capability.requiredInputs().stream()
+                .filter(input -> !approvalRuntimeInput(capability, input))
+                .filter(input -> {
+                    Object value = inputs == null ? null : inputs.get(input);
+                    return value == null || value.toString().isBlank();
+                })
+                .toList();
+    }
+
+    private boolean approvalRuntimeInput(CapabilityDescriptor capability, String input) {
+        return capability.requiresHumanApproval()
+                && ("pending_action_approved".equals(input) || "idempotency_key".equals(input));
+    }
+
     private TaskNodeStatus statusFor(Observation observation) {
         return switch (observation.status()) {
             case "succeeded" -> TaskNodeStatus.SUCCEEDED;
@@ -497,9 +723,12 @@ public class MarketingHarness {
     }
 
     private Map<String, Object> metadata(MarketingRequest request, ConversationSession session, TaskGraph graph,
-                                         List<Observation> observations, List<RiskAssessment> riskAssessments,
+                                         List<Observation> observations,
+                                         List<ObservationEvaluation> evaluations,
+                                         List<RiskAssessment> riskAssessments,
                                          List<HarnessTraceEvent> trace,
-                                         List<CapabilityDescriptor> capabilities) {
+                                         List<CapabilityDescriptor> capabilities,
+                                         TaskGraphValidationResult validation) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("decision", jsonValue(harnessDecision(request, graph)));
         metadata.put("state", jsonValue(session.state()));
@@ -511,11 +740,25 @@ public class MarketingHarness {
                 "observationCount", observations.size()
         ));
         metadata.put("taskGraph", taskGraphView(graph));
+        metadata.put("validation", validationView(validation));
         metadata.put("observations", observations.stream().map(this::observationView).toList());
+        metadata.put("observationEvaluations", evaluations.stream().map(this::evaluationView).toList());
         metadata.put("riskAssessments", riskAssessments.stream().map(this::riskAssessmentView).toList());
         metadata.put("harnessTrace", trace.stream().map(this::traceView).toList());
         metadata.put("capabilities", capabilities.stream().map(this::capabilityView).toList());
         return metadata;
+    }
+
+    private Map<String, Object> validationView(TaskGraphValidationResult validation) {
+        if (validation == null) {
+            return Map.of();
+        }
+        return Map.of(
+                "valid", validation.valid(),
+                "errors", validation.errors(),
+                "warnings", validation.warnings(),
+                "repairs", validation.repairs()
+        );
     }
 
     private Map<String, Object> harnessDecision(MarketingRequest request, TaskGraph graph) {
@@ -625,6 +868,20 @@ public class MarketingHarness {
         return view;
     }
 
+    private Map<String, Object> evaluationView(ObservationEvaluation evaluation) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("observationId", evaluation.observationId());
+        view.put("taskNodeId", evaluation.taskNodeId());
+        view.put("capabilityName", evaluation.capabilityName());
+        view.put("sufficient", evaluation.sufficient());
+        view.put("grounded", evaluation.grounded());
+        view.put("usable", evaluation.usable());
+        view.put("needsFallback", evaluation.needsFallback());
+        view.put("needsReplan", evaluation.needsReplan());
+        view.put("reasons", evaluation.reasons());
+        return view;
+    }
+
     private Map<String, Object> traceView(HarnessTraceEvent event) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("runId", event.runId());
@@ -649,6 +906,11 @@ public class MarketingHarness {
         view.put("provider", capability.provider());
         view.put("composableWith", capability.composableWith());
         view.put("fallbackCapabilityNames", capability.fallbackCapabilityNames());
+        view.put("capabilityType", capability.capabilityType());
+        view.put("inputSchema", jsonValue(capability.inputSchema()));
+        view.put("outputSchema", jsonValue(capability.outputSchema()));
+        view.put("preconditions", capability.preconditions());
+        view.put("postconditions", capability.postconditions());
         return view;
     }
 
@@ -673,6 +935,9 @@ public class MarketingHarness {
         }
         if (value instanceof VisibleObject visibleObject) {
             return visibleObjectView(visibleObject);
+        }
+        if (value instanceof ObservationEvaluation evaluation) {
+            return evaluationView(evaluation);
         }
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> converted = new LinkedHashMap<>();
@@ -766,8 +1031,14 @@ public class MarketingHarness {
 
     private Map<String, Object> feedbackInputs(PendingAction action, HumanFeedback feedback) {
         Map<String, Object> inputs = new LinkedHashMap<>(action.payload());
-        inputs.putAll(feedback.editedPayload());
+        feedback.editedPayload().forEach((key, value) -> {
+            if (!Set.of("task_graph_id", "task_node_id", "capability_name", "idempotency_key",
+                    "approval_source").contains(key)) {
+                inputs.put(key, value);
+            }
+        });
         inputs.put("confirmed", true);
+        inputs.put("pending_action_approved", true);
         inputs.put("human_feedback_decision", feedback.decision());
         inputs.put("pending_action_id", action.id());
         inputs.put("visible_object_id", action.visibleObjectId());

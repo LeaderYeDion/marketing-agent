@@ -20,6 +20,13 @@ public record PendingAction(
         long version
 ) {
     private static final Duration DEFAULT_TTL = Duration.ofMinutes(30);
+    private static final java.util.Set<String> IMMUTABLE_BINDING_KEYS = java.util.Set.of(
+            "task_graph_id",
+            "task_node_id",
+            "capability_name",
+            "idempotency_key",
+            "approval_source"
+    );
 
     public static PendingAction create(String id, String type, String sourceAgent, String invocationId,
                                        String visibleObjectId, Map<String, Object> payload) {
@@ -44,7 +51,11 @@ public record PendingAction(
     public PendingAction withEditedPayload(Map<String, Object> editedPayload, String decidedBy) {
         LinkedHashMap<String, Object> merged = new LinkedHashMap<>(payload);
         if (editedPayload != null) {
-            merged.putAll(editedPayload);
+            editedPayload.forEach((key, value) -> {
+                if (!IMMUTABLE_BINDING_KEYS.contains(key)) {
+                    merged.put(key, value);
+                }
+            });
         }
         return new PendingAction(id, type, sourceAgent, invocationId, visibleObjectId, PendingActionStatus.EDITED,
                 Map.copyOf(merged), createdAt, expiresAt, Instant.now(), decidedBy, version + 1);

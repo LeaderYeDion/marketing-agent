@@ -18,6 +18,7 @@ import com.example.marketing.core.llm.LlmGateway;
 import com.example.marketing.core.llm.LlmRequest;
 import com.example.marketing.core.memory.HarnessContext;
 import com.example.marketing.core.model.ConversationMessage;
+import com.example.marketing.core.observation.Observation;
 import com.example.marketing.core.task.TaskGraph;
 import com.example.marketing.core.task.TaskNode;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -49,11 +50,31 @@ public class TaskPlanner {
                 nodes.isEmpty() ? "empty" : "planned");
     }
 
+    public TaskGraph replan(MarketingRequest request, HarnessContext context, TaskGraph currentGraph,
+                            List<Observation> observations, String reason) {
+        String graphId = "tg_replan_" + UUID.randomUUID().toString().substring(0, 8);
+        String userGoal = currentGraph == null ? (request.query() == null ? "" : request.query())
+                : currentGraph.userGoal();
+        PlanDraft draft = planWithModel(request, context, replanUserMessage(request, context, currentGraph,
+                observations, reason));
+        if (draft.nodes().isEmpty()) {
+            return new TaskGraph(graphId, userGoal, List.of(), "Re-plan failed: " + reason,
+                    "Explain why continuation planning failed.", "failed");
+        }
+        List<TaskNode> nodes = validateAndNormalizeNodes(draft.nodes(), request, context);
+        return new TaskGraph(graphId, userGoal, nodes, "Re-plan after observation evaluation. " + draft.rationale(),
+                draft.answerStrategy(), nodes.isEmpty() ? "failed" : "planned");
+    }
+
     private PlanDraft planWithModel(MarketingRequest request, HarnessContext context) {
+        return planWithModel(request, context, plannerUserMessage(request, context));
+    }
+
+    private PlanDraft planWithModel(MarketingRequest request, HarnessContext context, String userMessage) {
         try {
             String raw = llmGateway.generateText(LlmRequest.simple("task-graph-planning",
                     plannerSystemMessage(context),
-                    List.of(ConversationMessage.user(plannerUserMessage(request, context), Map.of()))));
+                    List.of(ConversationMessage.user(userMessage, Map.of()))));
             return parsePlan(raw);
         }
         catch (Exception ex) {
@@ -117,27 +138,7 @@ public class TaskPlanner {
             ));
             index++;
         }
-        return removeInvalidDependencies(normalized);
-    }
-
-    private List<TaskNode> removeInvalidDependencies(List<TaskNode> nodes) {
-        Set<String> ids = nodes.stream().map(TaskNode::id).collect(Collectors.toSet());
-        return nodes.stream()
-                .map(node -> new TaskNode(
-                        node.id(),
-                        node.goal(),
-                        node.capabilityName(),
-                        node.inputs(),
-                        node.dependsOn().stream().filter(ids::contains).distinct().toList(),
-                        node.completionCriteria(),
-                        node.priority(),
-                        node.plannerRationale(),
-                        node.retryCount(),
-                        node.status(),
-                        node.riskLevel(),
-                        node.observationId()
-                ))
-                .toList();
+        return normalized;
     }
 
     private PlanDraft deterministicSafetyFallback(MarketingRequest request, HarnessContext context) {
@@ -202,18 +203,29 @@ public class TaskPlanner {
         builder.append("Plan a DAG. Independent nodes may have an empty dependsOn array and will be executed ");
         builder.append("in parallel by the harness. Dependent nodes must name prerequisite node ids. ");
         builder.append("Only choose capabilities from the catalog. Do not invent capability names.\n\n");
+        builder.append("Prefer fine-grained composable capabilities over coarse end-to-end agents. For Excel based ");
+        builder.append("activity enrollment, decompose the goal into spreadsheet_summarize or ");
+        builder.append("spreadsheet_query_product, activity_rule_check, enrollment_preview_create, ");
+        builder.append("enrollment_execute, and notification_copywriting when those sub-goals are requested. ");
+        builder.append("Never use a side-effect execution capability as a substitute for preview or approval; ");
+        builder.append("the harness will enforce human approval before execution.\n\n");
         builder.append("Capability catalog:\n");
         for (CapabilityDescriptor capability : context.capabilities()) {
             builder.append("- name=").append(capability.name())
                     .append("; description=").append(capability.description())
                     .append("; requiredInputs=").append(capability.requiredInputs())
+                    .append("; inputSchema=").append(capability.inputSchema())
                     .append("; outputContract=").append(capability.outputContract())
+                    .append("; outputSchema=").append(capability.outputSchema())
+                    .append("; capabilityType=").append(capability.capabilityType())
                     .append("; permissions=").append(capability.permissions())
                     .append("; sideEffects=").append(capability.sideEffects())
                     .append("; requiresHumanApproval=").append(capability.requiresHumanApproval())
                     .append("; risk=").append(capability.riskLevel())
                     .append("; composableWith=").append(capability.composableWith())
                     .append("; fallbacks=").append(capability.fallbackCapabilityNames())
+                    .append("; preconditions=").append(capability.preconditions())
+                    .append("; postconditions=").append(capability.postconditions())
                     .append("\n");
         }
         builder.append("\nReturn only JSON with this exact shape:\n");
@@ -251,6 +263,38 @@ public class TaskPlanner {
                 """.formatted(
                 request.query() == null ? "" : request.query(),
                 request.variables() == null ? Map.of() : request.variables(),
+                context.compressedContext());
+    }
+
+    private String replanUserMessage(MarketingRequest request, HarnessContext context, TaskGraph graph,
+                                     List<Observation> observations, String reason) {
+        return """
+                Original user input:
+                %s
+
+                Re-plan reason:
+                %s
+
+                Current task graph:
+                %s
+
+                Existing observations:
+                %s
+
+                Current harness context:
+                %s
+
+                Generate a continuation or repaired DAG using only catalog capabilities. Preserve already completed
+                business evidence through node inputs when it is needed downstream.
+                """.formatted(
+                request.query() == null ? "" : request.query(),
+                reason == null ? "" : reason,
+                graph == null ? Map.of() : graph.nodeStatuses(),
+                observations == null ? List.of() : observations.stream()
+                        .map(observation -> Map.of("taskNodeId", observation.taskNodeId(),
+                                "capability", observation.capabilityName(), "status", observation.status(),
+                                "summary", observation.summary(), "missingInputs", observation.missingInputs()))
+                        .toList(),
                 context.compressedContext());
     }
 

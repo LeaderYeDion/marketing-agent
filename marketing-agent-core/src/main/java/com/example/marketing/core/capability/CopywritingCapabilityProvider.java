@@ -18,7 +18,8 @@ public class CopywritingCapabilityProvider implements CapabilityProvider {
 
     @Override
     public boolean supports(CapabilityDescriptor descriptor) {
-        return descriptor != null && "copywriting".equals(descriptor.name());
+        return descriptor != null && ("copywriting".equals(descriptor.name())
+                || "notification_copywriting".equals(descriptor.name()));
     }
 
     @Override
@@ -34,12 +35,12 @@ public class CopywritingCapabilityProvider implements CapabilityProvider {
                 如果你正在考虑下单，可以优先查看活动商品、优惠条件和有效时间，确认满足条件后再参与。
                 """.formatted(audience, observations).trim();
         ConversationMessage message = ConversationMessage.assistant(draft, providerName(), "final_answer",
-                Map.of("capability", "copywriting", "product", product, "channel", channel));
+                Map.of("capability", executionRequest.capability().name(), "product", product, "channel", channel));
         return new Observation(
                 null,
                 executionRequest.runId(),
                 executionRequest.taskNodeId(),
-                "copywriting",
+                executionRequest.capability().name(),
                 "succeeded",
                 draft,
                 Map.of("source_observations", observations),
@@ -53,7 +54,7 @@ public class CopywritingCapabilityProvider implements CapabilityProvider {
                 false,
                 List.of(),
                 List.of(message),
-                Map.of("current_task", Map.of("type", "copywriting", "status", "succeeded"))
+                Map.of("current_task", Map.of("type", executionRequest.capability().name(), "status", "succeeded"))
         );
     }
 

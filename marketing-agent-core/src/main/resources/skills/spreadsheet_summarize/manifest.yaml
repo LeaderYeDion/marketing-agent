@@ -1,0 +1,19 @@
+name: spreadsheet_summarize
+version: 1.0.0
+summary: Read an uploaded or local spreadsheet and produce row count, columns, samples, and a reusable spreadsheet summary observation.
+intentHints: inspect spreadsheet, summarize Excel, read registration file, understand uploaded table
+entryAgent: activity_enrollment_provider
+requiredInputs: excel_file_path
+canEmit: observation, spreadsheet_summary, evidence
+outputContract: spreadsheet_summary, row_count, columns, sample_rows, evidence
+permissions: file.read.excel
+sideEffects: false
+requiresHumanApproval: false
+riskLevel: low
+composableWith: spreadsheet_query_product, activity_rule_check, enrollment_preview_create, notification_copywriting, copywriting
+fallbackSkills: rule_inquiry
+preconditions: excel_file_path points to a readable xlsx csv or txt file
+postconditions: spreadsheet summary is available as observation evidence and artifact
+owner: marketing-operations
+skillResource: /skills/spreadsheet_summarize/skill.md
+evalSuites: activity_enroll_decomposed

@@ -1,0 +1,19 @@
+name: activity_rule_check
+version: 1.0.0
+summary: Check whether upstream spreadsheet or product evidence appears compatible with a marketing activity's enrollment rules.
+intentHints: check activity rules, decide whether product can join promotion, validate eligibility, explain rule blockers
+entryAgent: activity_enrollment_provider
+requiredInputs: activity_id
+canEmit: observation, rule_check, evidence, missing_inputs
+outputContract: rule_check, eligibility_signal, evidence, limitations
+permissions: knowledge.read.rules
+sideEffects: false
+requiresHumanApproval: false
+riskLevel: medium
+composableWith: spreadsheet_query_product, spreadsheet_summarize, enrollment_preview_create, notification_copywriting, copywriting
+fallbackSkills: rule_inquiry
+preconditions: activity_id is known and upstream evidence is preferred
+postconditions: rule-check observation can be consumed by preview or answer synthesis
+owner: marketing-operations
+skillResource: /skills/activity_rule_check/skill.md
+evalSuites: activity_enroll_decomposed

@@ -1,0 +1,10 @@
+.git
+.idea
+.mvn/wrapper/maven-wrapper.jar
+**/target/classes
+**/target/test-classes
+**/target/surefire-reports
+**/target/generated-sources
+**/target/generated-test-sources
+node_modules
+npm-debug.log

@@ -1,8 +1,12 @@
 package com.example.marketing.app;
 
 import java.util.List;
+import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -47,6 +51,101 @@ class MarketingAgentApplicationTests {
         assertThat(response.metadata()).containsKey("decision");
     }
 
+    @Test
+    void harnessBlocksDirectSideEffectCapabilityBeforeApproval() {
+        MarketingResponse response = marketingAgentService.run(new MarketingRequest(
+                null,
+                "demo-user",
+                "force_enrollment_execute",
+                "社群",
+                "会员月卡",
+                "一二线城市白领",
+                List.of("报名"),
+                Map.of("excel_file_path", "E:/tmp/not-needed-before-approval.csv", "activity_id", "A100")
+        ));
+
+        assertThat(response.answer()).contains("需要你确认后才能执行");
+        assertThat(String.valueOf(response.metadata().get("harness"))).contains("waiting_for_approval");
+        assertThat(String.valueOf(response.metadata().get("pendingActions"))).contains("confirm_");
+        assertThat(String.valueOf(response.metadata().get("harnessTrace"))).contains("hitl_boundary_enforced");
+        assertThat(String.valueOf(response.metadata().get("observations")))
+                .contains("provider_not_invoked_before_approval");
+    }
+
+    @Test
+    void capabilityCatalogExposesDecomposedEnrollmentCapabilities() {
+        MarketingResponse response = marketingAgentService.run(new MarketingRequest(
+                null,
+                "demo-user",
+                "活动报名规则有哪些？",
+                "社群",
+                "会员月卡",
+                "一二线城市白领",
+                List.of("拉新", "转化"),
+                null
+        ));
+
+        String capabilities = String.valueOf(response.metadata().get("capabilities"));
+        assertThat(capabilities).contains("spreadsheet_summarize");
+        assertThat(capabilities).contains("spreadsheet_query_product");
+        assertThat(capabilities).contains("activity_rule_check");
+        assertThat(capabilities).contains("enrollment_preview_create");
+        assertThat(capabilities).contains("enrollment_execute");
+        assertThat(capabilities).contains("notification_copywriting");
+    }
+
+    @Test
+    void waitingForUserResumesOriginalTaskGraph(@TempDir Path tempDir) throws Exception {
+        String conversationId = "resume-waiting-graph";
+        MarketingResponse first = marketingAgentService.run(new MarketingRequest(
+                conversationId,
+                "demo-user",
+                "need_excel_path",
+                "社群",
+                "",
+                "",
+                List.of("检查报名表"),
+                null
+        ));
+
+        assertThat(first.answer()).contains("excel_file_path");
+        assertThat(String.valueOf(first.metadata().get("harness"))).contains("waiting_for_user");
+        assertThat(String.valueOf(first.metadata().get("state"))).contains("waiting_node");
+
+        Path csv = tempDir.resolve("enroll.csv");
+        Files.writeString(csv, "product_id,price\n123,99\n");
+        MarketingResponse second = marketingAgentService.run(new MarketingRequest(
+                conversationId,
+                "demo-user",
+                "补充文件路径",
+                "社群",
+                "",
+                "",
+                List.of("检查报名表"),
+                Map.of("excel_file_path", csv.toString())
+        ));
+
+        assertThat(second.answer()).contains("已读取报名表格");
+        assertThat(String.valueOf(second.metadata().get("harnessTrace"))).contains("waiting_graph_resumed");
+    }
+
+    @Test
+    void validatorRepairsInvalidPlannerDependencies() {
+        MarketingResponse response = marketingAgentService.run(new MarketingRequest(
+                null,
+                "demo-user",
+                "invalid_dependency_plan",
+                "社群",
+                "",
+                "",
+                List.of("规则检查"),
+                null
+        ));
+
+        assertThat(String.valueOf(response.metadata().get("validation"))).contains("INVALID_DEPENDENCY");
+        assertThat(String.valueOf(response.metadata().get("validation"))).contains("Removed invalid dependencies");
+    }
+
     @TestConfiguration
     static class StubLlmConfig {
         @Bean
@@ -54,6 +153,69 @@ class MarketingAgentApplicationTests {
         LlmClient stubLlmClient() {
             return (systemMessage, messages) -> {
                 if (systemMessage.contains("TASK_GRAPH_PLANNER")) {
+                    if (messages.stream().anyMatch(message -> message.content().contains("force_enrollment_execute"))) {
+                        return """
+                                {
+                                  "rationale": "This intentionally attempts a direct side-effect execution so the harness boundary can be tested.",
+                                  "answerStrategy": "The harness must pause for approval before provider execution.",
+                                  "nodes": [
+                                    {
+                                      "id": "node_1",
+                                      "goal": "Execute activity enrollment directly.",
+                                      "capabilityName": "enrollment_execute",
+                                      "dependsOn": [],
+                                      "inputs": {
+                                        "excel_file_path": "E:/tmp/not-needed-before-approval.csv",
+                                        "activity_id": "A100"
+                                      },
+                                      "completionCriteria": "Enrollment is executed only after approval.",
+                                      "priority": 100,
+                                      "rationale": "Direct execution is high risk and should be blocked by harness."
+                                    }
+                                  ]
+                                }
+                                """;
+                    }
+                    if (messages.stream().anyMatch(message -> message.content().contains("need_excel_path"))) {
+                        return """
+                                {
+                                  "rationale": "The user wants to inspect a spreadsheet but has not supplied the file path.",
+                                  "answerStrategy": "Ask for the missing file path and resume the same node later.",
+                                  "nodes": [
+                                    {
+                                      "id": "node_1",
+                                      "goal": "Summarize the registration spreadsheet.",
+                                      "capabilityName": "spreadsheet_summarize",
+                                      "dependsOn": [],
+                                      "inputs": {},
+                                      "completionCriteria": "Spreadsheet summary is produced.",
+                                      "priority": 100,
+                                      "rationale": "spreadsheet_summarize needs excel_file_path."
+                                    }
+                                  ]
+                                }
+                                """;
+                    }
+                    if (messages.stream().anyMatch(message -> message.content().contains("invalid_dependency_plan"))) {
+                        return """
+                                {
+                                  "rationale": "This intentionally contains an invalid dependency so validation repair can be tested.",
+                                  "answerStrategy": "Return the rule answer after repair.",
+                                  "nodes": [
+                                    {
+                                      "id": "node_1",
+                                      "goal": "Answer a rule question.",
+                                      "capabilityName": "rule_inquiry",
+                                      "dependsOn": ["missing_node"],
+                                      "inputs": {"question": "活动规则是什么？"},
+                                      "completionCriteria": "A grounded answer is produced.",
+                                      "priority": 100,
+                                      "rationale": "The dependency is invalid and should be removed."
+                                    }
+                                  ]
+                                }
+                                """;
+                    }
                     return """
                             {
                               "rationale": "The user is asking for marketing activity enrollment rules.",

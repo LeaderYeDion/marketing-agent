@@ -52,12 +52,25 @@ public class GoldenCaseEvaluator {
         }
         if (evalCase.minTaskNodes() > 0) {
             Object taskGraph = response.metadata().get("taskGraph");
-            int nodeCount = taskGraph instanceof TaskGraph graph ? graph.nodes().size() : 0;
+            int nodeCount = nodeCount(taskGraph);
             if (nodeCount < evalCase.minTaskNodes()) {
                 failures.add("expected at least " + evalCase.minTaskNodes() + " task nodes but got " + nodeCount);
             }
         }
         return failures.isEmpty() ? EvalResult.pass(evalCase.id()) : EvalResult.fail(evalCase.id(), failures);
+    }
+
+    private int nodeCount(Object taskGraph) {
+        if (taskGraph instanceof TaskGraph graph) {
+            return graph.nodes().size();
+        }
+        if (taskGraph instanceof java.util.Map<?, ?> map) {
+            Object nodes = map.get("nodes");
+            if (nodes instanceof java.util.Collection<?> collection) {
+                return collection.size();
+            }
+        }
+        return 0;
     }
 
     private void assertContains(String text, List<String> expected, List<String> failures, String prefix) {

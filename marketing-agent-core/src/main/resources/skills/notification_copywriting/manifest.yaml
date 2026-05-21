@@ -1,0 +1,19 @@
+name: notification_copywriting
+version: 1.0.0
+summary: Create a channel notification draft from upstream enrollment, rule-check, or spreadsheet observations.
+intentHints: write community notification, create follow-up copy after enrollment, generate announcement
+entryAgent: copywriting_provider
+requiredInputs: question
+canEmit: markdown, draft_copy
+outputContract: notification_draft, markdown
+permissions: content.write.draft
+sideEffects: false
+requiresHumanApproval: false
+riskLevel: low
+composableWith: spreadsheet_summarize, spreadsheet_query_product, activity_rule_check, enrollment_preview_create, enrollment_execute
+fallbackSkills: copywriting
+preconditions: user asks for a notification or upstream observations are available
+postconditions: draft copy is available as observation text
+owner: marketing-operations
+skillResource: /skills/notification_copywriting/skill.md
+evalSuites: copywriting_basic
