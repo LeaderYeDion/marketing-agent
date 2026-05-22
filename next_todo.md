@@ -203,6 +203,7 @@ Planner 的基础 system message 只能描述通用规划原则，例如：
 3. `SkillRegistryValidator` 只验证 provider 是否存在、skill resource 是否存在、sub-agent requiredInputs 是否兼容；它不验证 schema、risk declaration、sideEffects、output contract。
 4. provider 输出没有被 schema validator 校验。
 5. artifact、evidence、visibleObjects、missingInputs、confidence 仍未纳入结构化契约。
+6. 当前 `skill` 和 capability manifest 在概念与目录结构上仍混在一起。`SkillDescriptor` 实际承担的是 capability manifest descriptor 的职责，而不是 Anthropic-style skill 所强调的过程性知识包职责。
 
 下一步行动：
 
@@ -211,12 +212,15 @@ Planner 的基础 system message 只能描述通用规划原则，例如：
 3. 增加 `CapabilityManifestValidator`，验证 schema、risk、sideEffects、approval、provider support。
 4. 增加 `ObservationContractValidator`，校验 provider 输出是否满足 capability output schema。
 5. 将 artifact、evidence、visibleObjects、missingInputs、confidence 纳入 schema 契约。
+6. 将 capability manifest 从 `SkillDescriptor` 语义中拆出，逐步重命名或引入 `CapabilityManifestDescriptor`，避免把运行时契约误称为 skill。
+7. manifest 继续作为 planner、validator、policy、harness、eval 可机器读取的确定性契约；不要把长篇业务流程、few-shot、工具修复策略写入 manifest。
 
 完成标准：
 
 - planner 能基于 schema 判断上游输出是否满足下游输入。
 - 新增 capability 时不需要改 harness 路由代码。
 - provider 输出不符合 manifest 时会被 runtime 或测试发现。
+- manifest 和 skill 的职责边界清晰：manifest 管“系统允许什么、如何调度和治理”，skill 管“模型如何理解和执行这类任务”。
 
 ### P1-2 增加 Plan Validation 和 Plan Repair
 
@@ -398,6 +402,75 @@ initial capability inputs
 - 工具返回可修复错误时，系统能先在 capability 内部完成局部恢复，而不是立即暴露为全局失败。
 - 所有 capability 内部工具调用都有 trace、budget 和最终 observation，后续可以被 eval 和 audit 检查。
 
+### P1-6 将 Skill 定位从 Manifest 载体调整为过程性知识包
+
+当前状态：尚未完成。当前项目目录使用 `skills/{name}/manifest.yaml` 注册能力，`SkillRegistry` 读取 manifest 后生成 `SkillDescriptor`，再由 `CapabilityDescriptor.fromSkill(...)` 转成 planner 可见的 capability catalog。这个实现能支撑早期 capability 注册，但它把两个不同概念混在了一起：
+
+```text
+Capability manifest
+  -> 机器可读运行时契约
+  -> 给 harness / planner / validator / policy / eval 使用
+
+Skill
+  -> LLM 可读过程性知识包
+  -> 给 planner / react provider 学习如何理解、执行、修复和判断证据
+```
+
+长期看，`skill` 不应只是 manifest 的别名，也不应承担权限、审批、副作用、provider binding 等运行时治理职责。这些职责应留在 capability manifest 中。`skill` 应逐步向 Anthropic-style skill 的定位靠拢：一个包含 `SKILL.md`、示例、脚本、模板、领域参考和失败修复策略的按需加载知识包。
+
+目标状态：
+
+1. capability manifest 和 skill 分离：
+   - manifest 负责能力名、输入 schema、输出 contract、provider、风险、副作用、审批、fallback、组合关系、预算和审计字段。
+   - `SKILL.md` 负责使用场景、自然语言理解策略、参数抽取策略、工具调用步骤、失败修复策略、证据判断标准、few-shot 和反例。
+2. planner 默认只加载 compact capability catalog；当需要规划某个复杂能力时，可以按需加载该能力的 skill 摘要或完整 `SKILL.md`。
+3. react-capable provider 可以加载对应 `SKILL.md`，用于局部 Re-Act 循环中的参数修复、工具选择和证据充分性判断。
+4. skill 不能绕过 capability catalog、schema、policy、HITL 或 provider allowlist。它只能增强模型理解和执行质量，不能成为新的隐形 agent 或权限入口。
+5. 确定性副作用能力可以没有复杂 skill，或只提供非常薄的操作说明；高风险执行边界仍由 manifest + harness + policy 控制。
+
+建议目录形态：
+
+```text
+capabilities/
+  spreadsheet_query_product/
+    manifest.yaml
+    SKILL.md
+    eval_cases.yaml
+
+  activity_rule_check/
+    manifest.yaml
+    SKILL.md
+    eval_cases.yaml
+```
+
+如果短期继续沿用 `skills/` 目录名，也应保持文件职责分离：
+
+```text
+skills/{capability_name}/manifest.yaml
+skills/{capability_name}/SKILL.md
+skills/{capability_name}/eval_cases.yaml
+```
+
+行动路径：
+
+1. 引入或重命名 `CapabilityManifestDescriptor`，让当前 `SkillDescriptor` 的运行时契约职责逐步迁移到 manifest descriptor。
+2. 在 manifest parser 中只解析机器契约字段；停止把过程性说明混入 manifest 字段。
+3. 为 `spreadsheet_query_product`、`activity_rule_check`、`enrollment_preview_create` 优先补充 `SKILL.md`：
+   - `spreadsheet_query_product`：商品 ID 归一化、字段别名、查询失败修复、表格证据输出。
+   - `activity_rule_check`：规则证据来源、上游 observation 使用方式、证据不足时的追问/fallback。
+   - `enrollment_preview_create`：只生成 preview/diff，不执行副作用，如何组织确认卡信息。
+4. 增加 `SkillKnowledgeLoader`，支持按 capability name 加载 skill 摘要或完整内容，并控制上下文预算。
+5. 修改 planner 上下文装配：catalog 用于选择能力，skill knowledge 用于复杂能力的节点输入生成、依赖规划和 completion criteria 设计。
+6. 修改 react provider：允许其在预算内读取对应 `SKILL.md`，但工具调用仍必须来自 provider allowlist。
+7. 增加 eval：验证新增 skill 后，复杂自由表达、参数带噪声、工具第一次失败等案例的 DAG 和 observation 质量变好，同时不能新增未注册 capability 或绕过 HITL。
+
+完成标准：
+
+- `skill` 不再只是 capability manifest 的别名。
+- manifest 是可校验、可治理的机器契约；`SKILL.md` 是可按需加载的模型过程知识。
+- 新增业务能力时，manifest 可以独立被 validator/eval 检查，skill 可以独立被 planner/react provider 使用。
+- skill 的引入提升复杂任务规划和局部执行恢复能力，但不会改变 harness 的权限、安全和审计边界。
+
 ## P2 待办：RAG、记忆、评估与可观测性
 
 ### P2-1 将 RAG / Embedding 从占位实现升级为可用知识体系
@@ -576,6 +649,7 @@ runtime 应能控制每个 capability 的执行预算、超时、并发和失败
 5. waiting_for_user 的 `MissingInputExtractor`。
 6. observation evaluator 升级为 schema/evidence aware。
 7. 引入 capability-scoped Re-Act 执行模型，优先改造 `spreadsheet_query_product` 和 `activity_rule_check`，让可修复工具错误、参数规范化和证据不足处理先在 capability 内部闭环。
+8. 将 skill 从 capability manifest 载体中拆出，建立 `CapabilityManifestDescriptor` + `SKILL.md` 的双层结构，先为复杂能力补充 Anthropic-style 过程性知识包。
 
 第三阶段：让知识、记忆和 trace 支撑真实决策。
 
