@@ -54,6 +54,7 @@
 - `ObservationEvaluator` 和 `RecoveryPolicyEngine` 已形成 observation evaluation / fallback / re-plan 的第一版闭环。
 - metadata 中已经包含 task graph、validation、observations、observation evaluations、risk assessments、harness trace 和 capability catalog。
 - 应用级测试已覆盖高风险直执拦截、默认 catalog 不暴露 `activity_enroll`、`rule_inquiry_provider` 暴露、preview pending action 绑定完整、waiting_for_user 原图续跑、非法依赖修复。
+- 当前 `ActivityEnrollmentCapabilityProvider` 已把旧粗粒度报名 agent 拆成细粒度 capability 执行入口；这让 planner 可以组合能力，但 provider 内部仍主要是确定性工具封装，不具备 capability-scoped Re-Act 的观测、推理、参数修复和再次调用能力。
 
 但当前还不能判定项目进入稳定通用智能体形态。主要原因：
 
@@ -64,6 +65,7 @@
 - `waiting_for_user` 续跑主要依赖 request variables 和单字段 query 填充；多字段、自然语言补充、仍缺信息时更新同一 waiting node 的能力还不完整。
 - `ObservationEvaluator` 仍是简单规则，groundedness、充分性和 hallucination 检查都很粗糙。
 - re-plan 只有雏形，尚未形成可靠的 old graph / new graph lineage、已完成证据携带策略和 eval 约束。
+- 部分 provider 内部缺少 Re-Act 式工具执行循环。工具报错、参数带空格、字段别名、半结构化补充信息等问题目前主要靠工具错误文案或 harness 外层 recovery 暴露，provider 本身不会基于 observation 重新规范化参数、重试工具或生成更可靠的局部执行计划。
 - RAG 和部分 provider 仍是演示实现，规则判断、文案生成、报名执行都还没有真实业务级质量。
 - eval harness 仍以文本和 metadata 包含检查为主，不能系统性约束 DAG、HITL、recovery、groundedness 和多目标组合。
 
@@ -324,6 +326,78 @@ Planner 的基础 system message 只能描述通用规划原则，例如：
 - observation 质量能影响后续路径。
 - re-plan 能可靠保留已完成证据并生成 continuation graph。
 
+### P1-5 引入 Capability-scoped Re-Act 执行模型
+
+当前状态：尚未完成。当前 `ActivityEnrollmentCapabilityProvider` 的拆分方向是正确的，它把旧的粗粒度 `activity_enroll` 能力拆成了 `spreadsheet_summarize`、`spreadsheet_query_product`、`activity_rule_check`、`enrollment_preview_create`、`enrollment_execute` 等细粒度 capability，使 planner 能在 task graph 中组合、并行、暂停和恢复这些能力。
+
+但 provider 内部目前主要是确定性 switch + 工具调用。进入某个 capability 后，执行路径基本由代码分支决定：
+
+```text
+capability name
+  -> switch
+  -> 参数读取
+  -> 调用工具
+  -> 成功 observation / 失败 observation / missing inputs
+```
+
+这种实现适合副作用执行、明确 schema 的简单读写、幂等工具封装，但不适合需要再次自然语言理解、参数修复、证据综合和多步工具探索的 capability。例如：
+
+- 用户输入的 `product_id` 带有无关空格、全角符号或别名。
+- 表格查询工具返回“未匹配”，但 evidence 显示列名或商品字段可能需要改写。
+- `activity_rule_check` 需要基于上游 observation、规则知识、用户上下文和工具返回结果多轮判断。
+- RAG 检索命中不足时，需要改写 query、扩大/缩小检索范围、再判断证据是否足够。
+- 工具报错是可解释、可修复的参数错误，而不是应立即交给外层 harness re-plan 的全局失败。
+
+目标状态：
+
+1. capability provider 仍是 catalog 中的显式能力入口，不能退回一个粗粒度业务 agent。
+2. provider 可以声明执行模式：
+   - deterministic：确定性工具封装，适合副作用执行、简单查询、schema 明确的能力。
+   - react：capability 内部拥有有限步数的 observe-reason-act 循环，适合半结构化输入、工具错误修复、RAG/规则判断、证据综合。
+3. Re-Act 循环必须被 harness 约束，而不是成为新的架构中心：
+   - 只能调用该 capability allowlist 内的工具。
+   - 有最大步数、超时、token/cost budget。
+   - 每一步 tool call 和 observation 都要写入 trace。
+   - 最终仍必须输出统一 `Observation`。
+   - 不能绕过 `RiskPolicyEngine`、`PendingActionStateMachine` 和 HITL 边界。
+4. 高风险副作用能力，例如 `enrollment_execute`，默认必须保持 deterministic，不能让 provider 内部 Re-Act 自主执行真实副作用。
+
+行动路径：
+
+1. 设计 `CapabilityExecutionMode`，在 manifest / `CapabilityDescriptor` 中声明 `deterministic` 或 `react`。
+2. 新增 `ReactCapabilityRuntime`，提供受控循环：
+
+```text
+initial capability inputs
+  -> reason about current state
+  -> choose allowed tool
+  -> call tool
+  -> observe result
+  -> repair inputs / call another allowed tool / finish
+  -> emit Observation
+```
+
+3. 为 `CapabilityExecutionRequest` 增加更适合 agentic provider 的上下文字段，例如 upstream observations、allowed tools、execution budget、previous tool observations。
+4. 将 `spreadsheet_query_product` 优先改造成 react-capable capability：
+   - trim / normalize 商品 ID。
+   - 处理全角半角、空格、常见 SKU/商品名字段别名。
+   - 查询失败后基于表格 summary 尝试字段或关键词改写。
+   - 多次失败后输出结构化 missing input 或 failed observation。
+5. 将 `activity_rule_check` 升级为 react-capable capability：
+   - 读取上游 product/spreadsheet observation。
+   - 检索规则证据。
+   - 判断证据是否足够。
+   - 证据不足时输出 limitations、missing inputs 或 fallback 建议。
+6. provider 内部 Re-Act 的所有中间步骤写入 artifacts / trace，并在 final observation 中保留关键工具证据。
+7. 增加 eval：参数有空格、字段别名、第一次工具查询失败、RAG 首次命中不足等场景，应能在 capability 内部自修复；耗尽预算后才交给 harness fallback、ask user 或 re-plan。
+
+完成标准：
+
+- `ActivityEnrollmentCapabilityProvider` 不再只是 switch 后的一次性工具调用集合；其中适合 agentic 执行的 capability 可以在受控预算内多轮调用工具和修复参数。
+- capability 内部 Re-Act 不会重新变成粗粒度业务 agent；task graph、capability catalog、HITL 和 observation contract 仍由 harness 统一约束。
+- 工具返回可修复错误时，系统能先在 capability 内部完成局部恢复，而不是立即暴露为全局失败。
+- 所有 capability 内部工具调用都有 trace、budget 和最终 observation，后续可以被 eval 和 audit 检查。
+
 ## P2 待办：RAG、记忆、评估与可观测性
 
 ### P2-1 将 RAG / Embedding 从占位实现升级为可用知识体系
@@ -501,6 +575,7 @@ runtime 应能控制每个 capability 的执行预算、超时、并发和失败
 4. validation-driven deterministic repair 和 LLM repair。
 5. waiting_for_user 的 `MissingInputExtractor`。
 6. observation evaluator 升级为 schema/evidence aware。
+7. 引入 capability-scoped Re-Act 执行模型，优先改造 `spreadsheet_query_product` 和 `activity_rule_check`，让可修复工具错误、参数规范化和证据不足处理先在 capability 内部闭环。
 
 第三阶段：让知识、记忆和 trace 支撑真实决策。
 
