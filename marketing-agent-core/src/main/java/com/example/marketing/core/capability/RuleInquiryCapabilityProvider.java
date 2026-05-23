@@ -44,8 +44,9 @@ public class RuleInquiryCapabilityProvider implements CapabilityProvider {
                 executionRequest.inputs(),
                 executionRequest.compressedContext(),
                 executionRequest.visibleObjects(),
-                Map.of("provider_mode", providerName(), "output_contract",
-                        executionRequest.capability().outputContract())
+                Map.of("provider_mode", providerName(),
+                        "output_contract", executionRequest.capability().outputContract(),
+                        "workspace_refs", executionRequest.workspaceRefs())
         );
         SubAgentResult result = inquiryAgent.run(invocation, marketingRequest);
         boolean succeeded = "succeeded".equals(result.status());
@@ -58,8 +59,10 @@ public class RuleInquiryCapabilityProvider implements CapabilityProvider {
                 result.userVisibleSummary(),
                 Map.of("provider_mode", providerName(),
                         "delegate_agent", inquiryAgent.name(),
-                        "agent_context_summary", value(result.mainContextSummary())),
-                Map.of("delegate_agent", inquiryAgent.name(), "invocation_id", result.invocationId()),
+                        "agent_context_summary", value(result.mainContextSummary()),
+                        "workspace_refs", executionRequest.workspaceRefs()),
+                Map.of("delegate_agent", inquiryAgent.name(), "invocation_id", result.invocationId(),
+                        "workspace_refs", executionRequest.workspaceRefs()),
                 succeeded ? 0.8 : 0.45,
                 List.of(),
                 executionRequest.capability().riskLevel(),

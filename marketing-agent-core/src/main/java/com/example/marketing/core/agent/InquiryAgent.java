@@ -20,16 +20,20 @@ import com.example.marketing.core.model.ToolResult;
 import com.example.marketing.core.rag.RagDocument;
 import com.example.marketing.core.skill.SkillRegistry;
 import com.example.marketing.core.tool.KnowledgeTools;
+import com.example.marketing.core.tool.WorkspaceTools;
 
 @Service
 public class InquiryAgent implements SubAgent {
     private final KnowledgeTools knowledgeTools;
+    private final WorkspaceTools workspaceTools;
     private final ObjectProvider<ChatModel> chatModelProvider;
     private final SkillRegistry skillRegistry;
 
-    public InquiryAgent(KnowledgeTools knowledgeTools, ObjectProvider<ChatModel> chatModelProvider,
+    public InquiryAgent(KnowledgeTools knowledgeTools, WorkspaceTools workspaceTools,
+                        ObjectProvider<ChatModel> chatModelProvider,
                         SkillRegistry skillRegistry) {
         this.knowledgeTools = knowledgeTools;
+        this.workspaceTools = workspaceTools;
         this.chatModelProvider = chatModelProvider;
         this.skillRegistry = skillRegistry;
     }
@@ -62,7 +66,7 @@ public class InquiryAgent implements SubAgent {
                     Map.of("error_code", "CHAT_MODEL_NOT_AVAILABLE"), commits);
         }
 
-        InquiryTools tools = new InquiryTools(context, sink);
+        InquiryTools tools = new InquiryTools(invocation, context, sink);
         try {
             AssistantMessage answer = AgenticSubAgentSupport.runReactAgent(
                     name(),
@@ -97,6 +101,8 @@ public class InquiryAgent implements SubAgent {
                 You are not a fixed RAG chain. Reason about the user's question, decide whether evidence is needed,
                 choose tools, inspect observations, and then reason again.
                 Use read_skill when a skill may help.
+                Use read_workspace or search_workspace when prior observations, artifacts, or archived conversation
+                refs may contain evidence. Workspace tools are read-only and scoped to the current conversation.
                 Use search tools when the answer depends on rules, policies, promotion limits, enrollment details,
                 or prior knowledge. Evaluate whether retrieved evidence is relevant before answering.
                 If evidence is weak, rewrite the query, search a different knowledge base, or ask for clarification.
@@ -126,10 +132,12 @@ public class InquiryAgent implements SubAgent {
     }
 
     private final class InquiryTools {
+        private final SubAgentInvocation invocation;
         private final MarketingAgentContext context;
         private final SubAgentEventSink sink;
 
-        private InquiryTools(MarketingAgentContext context, SubAgentEventSink sink) {
+        private InquiryTools(SubAgentInvocation invocation, MarketingAgentContext context, SubAgentEventSink sink) {
+            this.invocation = invocation;
             this.context = context;
             this.sink = sink;
         }
@@ -143,6 +151,14 @@ public class InquiryAgent implements SubAgent {
                     FunctionToolCallback.builder("search_knowledge_base", this::searchKnowledgeBase)
                             .description("Search a specific logical knowledge base. Supported values include rule, promotion, enrollment, case, risk, metric, or default.")
                             .inputType(SearchBaseRequest.class)
+                            .build(),
+                    FunctionToolCallback.builder("read_workspace", this::readWorkspace)
+                            .description("Read a read-only workspace document for this conversation, such as an observation, artifact, or archived conversation history path from workspace_refs.")
+                            .inputType(WorkspaceReadRequest.class)
+                            .build(),
+                    FunctionToolCallback.builder("search_workspace", this::searchWorkspace)
+                            .description("Search read-only workspace documents for this conversation under a path prefix. Use this to recover evidence from previous observations or archived history.")
+                            .inputType(WorkspaceSearchRequest.class)
                             .build());
         }
 
@@ -165,12 +181,36 @@ public class InquiryAgent implements SubAgent {
             return "knowledgeBase=" + base + ", result=" + result.data();
         }
 
+        private String readWorkspace(WorkspaceReadRequest request) {
+            String path = blankToDefault(request.path(), "");
+            sink.toolStart("read_workspace", Map.of("path", path));
+            Map<String, Object> result = workspaceTools.readableView(invocation.conversationId(), path);
+            sink.toolEnd("read_workspace", Map.of("path", result.get("path"),
+                    "missing", String.valueOf(result.get("metadata")).contains("missing=true")));
+            return result.toString();
+        }
+
+        private String searchWorkspace(WorkspaceSearchRequest request) {
+            String path = blankToDefault(request.path(), "/");
+            String query = blankToDefault(request.query(), "");
+            sink.toolStart("search_workspace", Map.of("path", path, "query", query));
+            List<Map<String, Object>> result = workspaceTools.searchableView(invocation.conversationId(), path, query);
+            sink.toolEnd("search_workspace", Map.of("path", path, "query", query, "hitCount", result.size()));
+            return result.toString();
+        }
+
     }
 
     private record SearchRequest(String query, String reason) {
     }
 
     private record SearchBaseRequest(String query, String knowledgeBase, String reason) {
+    }
+
+    private record WorkspaceReadRequest(String path, String reason) {
+    }
+
+    private record WorkspaceSearchRequest(String path, String query, String reason) {
     }
 
 }

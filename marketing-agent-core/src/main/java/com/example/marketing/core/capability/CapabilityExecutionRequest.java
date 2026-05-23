@@ -14,11 +14,13 @@ public record CapabilityExecutionRequest(
         CapabilityDescriptor capability,
         Map<String, Object> inputs,
         String compressedContext,
+        Map<String, Object> workspaceRefs,
         List<VisibleObject> visibleObjects
 ) {
     public CapabilityExecutionRequest {
         inputs = inputs == null ? Map.of() : Map.copyOf(inputs);
         compressedContext = compressedContext == null ? "" : compressedContext;
+        workspaceRefs = workspaceRefs == null ? Map.of() : Map.copyOf(workspaceRefs);
         visibleObjects = visibleObjects == null ? List.of() : List.copyOf(visibleObjects);
     }
 }

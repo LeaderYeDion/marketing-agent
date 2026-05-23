@@ -7,6 +7,7 @@ import com.example.marketing.core.model.ContextSummary;
 import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.model.PendingAction;
 import com.example.marketing.core.model.VisibleObject;
+import com.example.marketing.core.workspace.WorkspaceEntry;
 
 public record HarnessMemory(
         List<ConversationMessage> recentMessages,
@@ -16,7 +17,9 @@ public record HarnessMemory(
         Map<String, Object> workingState,
         Map<String, Object> taskMemory,
         Map<String, Object> artifactMemory,
-        Map<String, Object> decisionMemory
+        Map<String, Object> decisionMemory,
+        Map<String, Object> workspaceRefs,
+        List<WorkspaceEntry> workspaceEntries
 ) {
     public HarnessMemory {
         recentMessages = recentMessages == null ? List.of() : List.copyOf(recentMessages);
@@ -27,5 +30,7 @@ public record HarnessMemory(
         taskMemory = taskMemory == null ? Map.of() : Map.copyOf(taskMemory);
         artifactMemory = artifactMemory == null ? Map.of() : Map.copyOf(artifactMemory);
         decisionMemory = decisionMemory == null ? Map.of() : Map.copyOf(decisionMemory);
+        workspaceRefs = workspaceRefs == null ? Map.of() : Map.copyOf(workspaceRefs);
+        workspaceEntries = workspaceEntries == null ? List.of() : List.copyOf(workspaceEntries);
     }
 }

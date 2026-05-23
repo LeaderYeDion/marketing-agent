@@ -4,38 +4,39 @@
 
 `project_goal.md` 定义项目终极蓝图：本项目不是固定 workflow、关键词路由或 sub-agent 委派系统，而是以 LLM 自然语言理解为决策内核、以 harness engineering 作为工程约束和运行时底座的营销通用智能体。
 
-`comparing_deep_agents.md` 进一步指出：本项目已经有业务 harness 骨架，但相比 `langchain-ai/deepagents`，仍缺少成熟 agent harness 运行时常见的几类基础能力：workspace / filesystem context、自动摘要、todo plan memory、subagent context isolation、middleware lifecycle、progressive skill disclosure。
+`comparing_deep_agents.md` 进一步指出：本项目已经有业务 harness 骨架，但相比 `langchain-ai/deepagents`，仍需持续补齐成熟 agent harness 运行时常见的几类基础能力。当前代码已补上 workspace / filesystem context 的基础入口，以及 harness middleware lifecycle 的基础栈；后续重点转向 todo plan memory、统一副作用权限、subagent context isolation、progressive skill disclosure、schema-aware validation 与 eval。
 
 本文档记录下一步迭代方向。优先级不按改动量、短期紧急程度或业务演示效果排序，而按架构合理性排序：先补运行时地基，再补能力契约，再补具体 provider 质量。
 
 ## 当前总体判断
 
-本项目当前方向是正确的，并且已经超过普通 agent demo：
+本项目当前方向是正确的，并且已经超过普通 agent demo。基于当前代码重新核查后，运行时基线已经发生变化：
 
-- `MarketingHarness` 已统一承担会话锁、上下文装配、task graph 规划、校验、调度、Observation、Recovery、HITL、审计和 metadata 输出。
+- `MarketingHarness` 仍是统一运行入口，但已经接入 `HarnessMiddlewareChain`，context assemble、model planning、capability call、approval、observation commit 都有生命周期钩子。
+- `AgentWorkspace`、`InMemoryAgentWorkspace`、`WorkspaceTools` 已存在；observation、evidence、artifact、conversation history 已能写入 workspace，并通过 `workspaceRefs` 回到 metadata、session state、provider/sub-agent 上下文。
+- `WorkspaceOffloadMiddleware` 已承接 observation/evidence/artifact offload；`TraceMiddleware` 已承接生命周期 trace；`ToolPermissionMiddleware` 已承接 capability 执行前风险评估；`ContextBudgetMiddleware` 已记录上下文预算状态。
 - `TaskPlanner` 已通过 LLM 生成 DAG，避免在 Java 代码里做自然语言关键词路由。
 - `TaskGraph` 已能表达节点依赖、并行 ready node、waiting_for_user、waiting_for_approval、failed、succeeded 等状态。
 - `CapabilityDescriptor` / `SkillDescriptor` 已经在尝试把能力暴露为可组合、可治理、可评估的能力目录。
 - `PendingActionStateMachine` 已把高风险副作用动作关进确定性审批边界。
 - `ObservationEvaluator`、`RecoveryPolicyEngine` 和 `TaskGraphValidator` 已有第一版执行闭环。
 
-但系统距离“顶级 agent harness”还有明显差距。最核心的问题不是某个 provider 还不够强，而是运行时底座仍偏薄：
+因此，已实现的 P0-1 / P0-2 不再保留为 TODO 主体。剩余差距集中在“运行时能力是否能规模化复用”和“能力契约是否足够机器可验证”：
 
-- 上下文管理仍主要是截断、拼接和少量 summary，没有 workspace、自动摘要、可恢复历史、artifact refs。
-- `MarketingHarness` 是 service-first 大类，不是 middleware-first 运行时；横切能力会不断堆进主类。
 - DAG 是一次性计划产物，缺少模型可持续维护的 todo / plan memory。
+- 副作用审批已有状态机和 capability 前置风险评估，但 operation、pending action、observation、audit 的双向引用仍不完整；sub-agent 内部工具调用也还没有继承统一 permission middleware。
 - sub-agent 多数是 capability provider 的内部实现，没有作为 context isolation 工具被主运行时统一调度。
 - skill 仍更像 capability manifest 载体，不是 `SKILL.md + references/scripts/assets/eval` 的渐进披露技能包。
 - manifest schema、plan validation、observation contract、eval harness 仍不足以支撑能力规模化扩展。
+- workspace 当前是内存实现，历史归档是确定性归档；token-aware summarization、持久化 backend、context overflow retry 属于后续工程增强，不再视为运行时地基阻塞项。
 
 因此，后续迭代的架构主线应调整为：
 
 ```text
-Workspace / Context Runtime
-  -> Harness Middleware
-  -> PlanMemory / Todo + TaskGraph
-  -> Capability Manifest / Skill Package 分层
+PlanMemory / Todo + TaskGraph
+  -> ToolPermission / HITL / Operation Lineage
   -> SubAgent Delegation / Context Isolation
+  -> Capability Manifest / Skill Package 分层
   -> Schema-aware Validation / Observation Evaluation / Recovery
   -> RAG / Provider / Answer / UI 质量增强
 ```
@@ -59,106 +60,7 @@ Workspace / Context Runtime
 
 ## P0：运行时地基优先
 
-### P0-1 引入 AgentWorkspace，把上下文从 prompt 搬到可重访工作区
-
-架构原因：
-
-deepagents 的关键启发是：长任务不能只靠 message history 和 prompt 拼接。文件系统 / workspace 是上下文卸载、历史恢复、artifact 管理、sub-agent 隔离和 skill 渐进披露的共同底座。本项目如果继续只增强 `ContextAssembler.compressedContext()`，能力越多 prompt 越膨胀，旧证据越容易丢，复杂任务越不稳定。
-
-当前状态：
-
-- 有 `VisibleObject`、`Observation.artifacts`、`artifactMemory`、`FileTools` 等雏形。
-- `ContextAssembler` 只暴露最近消息、handoff summary、visible object ids、pending action ids 和 state keys。
-- 被截断的历史、长 tool result、长 observation 没有进入可恢复工作区。
-
-目标状态：
-
-每个 conversation / thread 拥有一个受控 workspace，至少支持：
-
-```text
-/conversation_history/
-/plans/
-/todos/
-/observations/
-/artifacts/
-/subagents/
-/skills/
-/memory/
-```
-
-建议接口：
-
-```java
-interface AgentWorkspace {
-    List<WorkspaceEntry> list(String conversationId, String path);
-    WorkspaceDocument read(String conversationId, String path);
-    WorkspaceDocument write(String conversationId, String path, String content, Map<String, Object> metadata);
-    WorkspaceDocument edit(String conversationId, String path, WorkspacePatch patch);
-    List<WorkspaceSearchHit> search(String conversationId, String path, String query);
-    WorkspaceStat stat(String conversationId, String path);
-}
-```
-
-下一步行动：
-
-1. 新增 `AgentWorkspace` 接口和 `InMemoryAgentWorkspace` 实现。
-2. 在 `MarketingHarness.commitObservation` 周边增加 workspace 写入：长 evidence、长 artifact、长 provider result 写入 `/observations/{runId}/{nodeId}.md` 或 JSON。
-3. `ContextAssembler` 改为输出 workspace refs 和摘要，而不是把所有信息直接拼进 prompt。
-4. 将旧消息压缩摘要写入 `/conversation_history/{conversationId}.md`，并在 handoff summary 中保留路径。
-5. 为 planner / provider / sub-agent 提供只读 workspace search/read 能力，先不开放任意写。
-
-完成标准：
-
-- 长 observation 和长工具结果不再必须塞回 prompt。
-- 被压缩或截断的历史能通过 workspace ref 找回。
-- metadata 中能看到关键 observation/artifact 的 workspace path。
-- 多轮任务推进时，模型能知道“我们做到哪一步”，并能通过 refs 找证据。
-
-### P0-2 将 Harness 从 service-first 演进为 middleware-first
-
-架构原因：
-
-`MarketingHarness` 当前承担太多职责。继续往里塞 context budget、workspace offload、skill disclosure、tool permission、subagent delegation、trace、HITL，会让主流程越来越难维护。deepagents 的优势在于把这些横切能力做成 middleware，套在 model call、tool call、sub-agent call 和 memory lifecycle 上。
-
-当前状态：
-
-- `MarketingHarness` 集中处理 planning、validation、execution、risk、commit、evaluation、recovery、feedback、metadata。
-- `MarketingGraphFactory` 目前只是 START -> harness -> END 的单节点图。
-- 权限、trace、recovery、HITL 已有逻辑，但不是统一 middleware lifecycle。
-
-目标状态：
-
-先不必重写成 LangChain 风格，但应抽出本项目自己的 extension points：
-
-```text
-beforeContextAssemble / afterContextAssemble
-beforePlan / afterPlan
-beforeCapabilityCall / afterCapabilityCall
-beforeObservationCommit / afterObservationCommit
-beforeModelCall / afterModelCall
-onContextOverflow
-onHumanApprovalRequired
-```
-
-下一步行动：
-
-1. 新增 `HarnessMiddleware` 接口和 `HarnessInvocationContext`。
-2. 先抽出四个最关键 middleware：
-   - `ContextBudgetMiddleware`
-   - `WorkspaceOffloadMiddleware`
-   - `ToolPermissionMiddleware`
-   - `TraceMiddleware`
-3. 将 `RiskPolicyEngine` 和 PendingAction 审批入口逐步包进 `ToolPermissionMiddleware` / `HumanApprovalMiddleware`。
-4. 将 metadata 中的 trace 来源改为 middleware 统一写入。
-5. 为后续 `TodoMiddleware`、`SkillProgressiveDisclosureMiddleware`、`SubAgentDelegationMiddleware` 预留生命周期。
-
-完成标准：
-
-- 新增横切能力不需要继续扩大 `MarketingHarness` 主方法。
-- capability call 前后有统一拦截点。
-- model call 和 sub-agent call 未来可以复用同一套 context / trace / permission 策略。
-
-### P0-3 建立 PlanMemory / Todo，与 TaskGraph 形成双层计划
+### P0-1 建立 PlanMemory / Todo，与 TaskGraph 形成双层计划
 
 架构原因：
 
@@ -189,7 +91,7 @@ TodoList / PlanMemory
 - replan 后能看出哪些 todo 已完成、哪些被替换、哪些新增。
 - todo 不替代 task graph；它服务于长任务推进和可解释性。
 
-### P0-4 统一副作用权限为 tool/capability-level middleware
+### P0-2 统一副作用权限、HITL 与 Operation Lineage
 
 架构原因：
 
@@ -197,9 +99,10 @@ TodoList / PlanMemory
 
 当前状态：
 
-- high-risk capability 已经在 provider 执行前由 `RiskPolicyEngine` 拦截。
+- high-risk capability 已经在 provider 执行前由 `ToolPermissionMiddleware` 调用 `RiskPolicyEngine` 拦截。
 - `PendingActionStateMachine` 已管理 approve/reject/edit/expire/executed。
 - `enrollment_execute` 已要求 `pending_action_approved=true`。
+- `TraceMiddleware` 已能记录 `on_human_approval_required`，但 pending action 创建、operation record、audit payload 仍主要在 `MarketingHarness` 内完成。
 
 仍需补齐：
 
@@ -218,7 +121,7 @@ TodoList / PlanMemory
 
 1. 抽出 `PendingActionFactory`，从 `MarketingHarness` 中分离 pending action 绑定、不可变字段、idempotency key、audit payload。
 2. 扩展 `OperationRecord` 标准字段。
-3. 在 `ToolPermissionMiddleware` 中统一判断 side effect / approval requirement。
+3. 在 `ToolPermissionMiddleware` 中统一判断 sideEffects、permissions、riskLevel、approval requirement，避免只依赖 provider 私有约定。
 4. 增加回归：payload 篡改、重复确认、过期确认、错误 provider 产出执行卡、sub-agent 内部敏感工具调用。
 
 完成标准：
@@ -226,6 +129,43 @@ TodoList / PlanMemory
 - 任意 provider 或 sub-agent 都不能绕过副作用边界。
 - 可以从 operation 反查 pending action、task node、observation、audit event。
 - HITL 不只是某个业务 provider 的约定，而是运行时统一机制。
+
+### P0-3 引入 SubAgent Delegation 作为 Context Isolation 工具
+
+架构原因：
+
+此前把 sub-agent 从流程中心降级为 capability provider 是正确的，因为不能让任意 sub-agent 接管系统。但 deepagents 的启发是：sub-agent 还有另一个重要价值，即 context isolation。当前 workspace 和 middleware 基线已经具备，主运行时应能把重型检索、阅读、表格分析、规则核验委派给隔离上下文，主上下文只接收 summary + refs。
+
+目标状态：
+
+区分两类 sub-agent：
+
+1. capability-backed sub-agent  
+   作为明确 capability provider 的内部实现，例如 `rule_inquiry`。
+
+2. context-isolation sub-agent  
+   作为主运行时可调用的 `delegate_task` 能力，用于临时深挖、分析、阅读、清洗资料。
+
+下一步行动：
+
+1. 新增 `delegate_task` capability，输入包含：
+   - `agentName`
+   - `task`
+   - `expectedOutput`
+   - `contextRefs`
+   - `allowedTools`
+   - `maxSteps`
+   - `maxTokens`
+2. 新增 `general_purpose_agent`，只允许读 workspace、读知识库、做分析总结，不允许副作用。
+3. 子 agent 详细工具输出写入 `/subagents/{invocationId}/`。
+4. 主 harness 只接收 summary、confidence、workspace refs 和 observation。
+5. 为每个 sub-agent 定义 permission profile，并接入 `ToolPermissionMiddleware`。
+
+完成标准：
+
+- 主上下文不再吞下所有重型检索和分析过程。
+- 子 agent 不能绕过 capability catalog、schema、policy 和 HITL。
+- complex task 可以通过 `delegate_task` 获得隔离分析，但最终仍回到 task graph / observation 闭环。
 
 ## P1：能力契约、skill 分层和子任务隔离
 
@@ -323,44 +263,7 @@ Planner 能否稳定组合能力，取决于它看到的能力契约是否足够
 - 复杂能力能按需获得过程性知识。
 - skill 不能隐式启用未授权工具或副作用。
 
-### P1-4 引入 SubAgent Delegation 作为 Context Isolation 工具
-
-架构原因：
-
-此前把 sub-agent 从流程中心降级为 capability provider 是正确的，因为不能让任意 sub-agent 接管系统。但 deepagents 的启发是：sub-agent 还有另一个重要价值，即 context isolation。主运行时应能把重型检索、阅读、表格分析、规则核验委派给隔离上下文，主上下文只接收 summary + refs。
-
-目标状态：
-
-区分两类 sub-agent：
-
-1. capability-backed sub-agent  
-   作为明确 capability provider 的内部实现，例如 `rule_inquiry`。
-
-2. context-isolation sub-agent  
-   作为主运行时可调用的 `delegate_task` 能力，用于临时深挖、分析、阅读、清洗资料。
-
-下一步行动：
-
-1. 新增 `delegate_task` capability，输入包含：
-   - `agentName`
-   - `task`
-   - `expectedOutput`
-   - `contextRefs`
-   - `allowedTools`
-   - `maxSteps`
-   - `maxTokens`
-2. 新增 `general_purpose_agent`，只允许读 workspace、读知识库、做分析总结，不允许副作用。
-3. 子 agent 详细工具输出写入 `/subagents/{invocationId}/`。
-4. 主 harness 只接收 summary、confidence、workspace refs 和 observation。
-5. 为每个 sub-agent 定义 permission profile。
-
-完成标准：
-
-- 主上下文不再吞下所有重型检索和分析过程。
-- 子 agent 不能绕过 capability catalog、schema、policy 和 HITL。
-- complex task 可以通过 `delegate_task` 获得隔离分析，但最终仍回到 task graph / observation 闭环。
-
-### P1-5 增加 Validation-driven Plan Repair
+### P1-4 增加 Validation-driven Plan Repair
 
 架构原因：
 
@@ -382,7 +285,7 @@ Planner 能否稳定组合能力，取决于它看到的能力契约是否足够
 - 常见 plan 错误能自动修复。
 - 修复过程可追踪、可 eval。
 
-### P1-6 升级 ObservationEvaluator 和 Recovery / Replan Lineage
+### P1-5 升级 ObservationEvaluator 和 Recovery / Replan Lineage
 
 架构原因：
 
@@ -412,7 +315,7 @@ Planner 能否稳定组合能力，取决于它看到的能力契约是否足够
 - replan 能保留已完成证据，不会重跑整个任务或丢失上下文。
 - metadata 能解释为什么 fallback / ask user / replan。
 
-### P1-7 引入 Capability-scoped Re-Act 执行模型
+### P1-6 引入 Capability-scoped Re-Act 执行模型
 
 架构原因：
 
@@ -608,14 +511,33 @@ deepagents 的产品形态会流式展示 subagent、todos、sandbox、HITL。�
 - 用户能看见复杂任务正在怎么推进。
 - 审批前能看到清晰 preview、diff、证据和风险。
 
+### P3-4 Context Runtime 持久化、摘要和预算治理
+
+架构原因：
+
+Workspace 和 refs 已经建立，context budget middleware 也已接入，但当前实现仍偏内存和确定性归档。它不再阻塞运行时地基成立，却会影响长期会话、生产部署和成本控制。
+
+下一步行动：
+
+1. 将 `AgentWorkspace` backend 从内存实现扩展到数据库或对象存储。
+2. `ContextBudgetMiddleware` 接入 token-aware budget，而不是只按字符数记录。
+3. 对过长 conversation history 做摘要 + 原文归档，摘要中保留 workspace path。
+4. context overflow 时支持压缩后重试 planner/model call。
+5. 扩展 workspace read/search 到更多只读 provider，但保持写入仍由 runtime/middleware 控制。
+
+完成标准：
+
+- 长会话跨进程可恢复。
+- context budget 触发后有确定性压缩和重试策略。
+- provider 可以通过 refs 找证据，但不能随意写 workspace 或绕过 runtime。
+
 ## 建议迭代顺序
 
-第一阶段：运行时地基。
+第一阶段：剩余运行时地基。
 
-1. `AgentWorkspace` + observation/artifact/history offload。
-2. `HarnessMiddleware` 基础接口 + context/trace/workspace/permission 四个 middleware。
-3. `PlanMemory` / `TodoItem` 与 TaskGraph 双向引用。
-4. `ToolPermissionMiddleware` 统一 side-effect / approval 边界。
+1. `PlanMemory` / `TodoItem` 与 TaskGraph 双向引用。
+2. `ToolPermissionMiddleware` 统一 side-effect / approval / operation lineage 边界。
+3. `delegate_task` + `general_purpose_agent`，把 sub-agent 用作受控 context isolation。
 
 第二阶段：契约和知识包。
 
@@ -631,8 +553,7 @@ deepagents 的产品形态会流式展示 subagent、todos、sandbox、HITL。�
 2. validation-driven LLM repair。
 3. schema/evidence aware `ObservationEvaluator`。
 4. graph lineage 和 replan 合并策略。
-5. `delegate_task` + `general_purpose_agent`。
-6. `ReactCapabilityRuntime`，先改造 `spreadsheet_query_product`、`activity_rule_check`、`rule_inquiry`。
+5. `ReactCapabilityRuntime`，先改造 `spreadsheet_query_product`、`activity_rule_check`、`rule_inquiry`。
 
 第四阶段：证据和评估。
 
@@ -646,6 +567,7 @@ deepagents 的产品形态会流式展示 subagent、todos、sandbox、HITL。�
 1. `AnswerSynthesizer`。
 2. 执行预算、并发、取消。
 3. 前端流式 agent 工作台。
+4. workspace 持久化、token-aware summarization、context overflow retry。
 
 ## 每次改动的判断标准
 

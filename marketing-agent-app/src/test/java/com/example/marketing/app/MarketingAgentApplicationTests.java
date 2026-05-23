@@ -22,6 +22,7 @@ import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.api.MarketingResponse;
 import com.example.marketing.core.MarketingAgentService;
 import com.example.marketing.core.llm.LlmClient;
+import com.example.marketing.core.workspace.AgentWorkspace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,6 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MarketingAgentApplicationTests {
     @Autowired
     private MarketingAgentService marketingAgentService;
+    @Autowired
+    private AgentWorkspace agentWorkspace;
 
     @Test
     void contextLoads() {
@@ -68,6 +71,19 @@ class MarketingAgentApplicationTests {
         assertThat(String.valueOf(response.metadata().get("harness"))).contains("waiting_for_approval");
         assertThat(String.valueOf(response.metadata().get("pendingActions"))).contains("confirm_");
         assertThat(String.valueOf(response.metadata().get("harnessTrace"))).contains("hitl_boundary_enforced");
+        assertThat(String.valueOf(response.metadata().get("harnessTrace")))
+                .contains("before_model_call")
+                .contains("after_model_call")
+                .contains("before_capability_call")
+                .contains("tool_permission_evaluated")
+                .contains("on_human_approval_required")
+                .contains("before_observation_commit")
+                .contains("after_observation_commit");
+        assertThat(String.valueOf(response.metadata().get("middleware")))
+                .contains("ContextBudgetMiddleware")
+                .contains("TraceMiddleware")
+                .contains("ToolPermissionMiddleware")
+                .contains("WorkspaceOffloadMiddleware");
         assertThat(String.valueOf(response.metadata().get("observations")))
                 .contains("provider_not_invoked_before_approval");
     }
@@ -179,6 +195,39 @@ class MarketingAgentApplicationTests {
 
         assertThat(String.valueOf(response.metadata().get("validation"))).contains("INVALID_DEPENDENCY");
         assertThat(String.valueOf(response.metadata().get("validation"))).contains("Removed invalid dependencies");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void observationsAndEvictedHistoryAreRecoverableThroughWorkspaceRefs() {
+        String conversationId = "workspace-context-runtime";
+        MarketingResponse response = null;
+        for (int i = 0; i < 14; i++) {
+            response = marketingAgentService.run(new MarketingRequest(
+                    conversationId,
+                    "demo-user",
+                    "娲诲姩鎶ュ悕瑙勫垯鏈夊摢浜涳紵 " + i,
+                    "绀剧兢",
+                    "浼氬憳鏈堝崱",
+                    "涓€浜岀嚎鍩庡競鐧介",
+                    List.of("鎷夋柊", "杞寲"),
+                    null
+            ));
+        }
+
+        Map<String, Object> refs = (Map<String, Object>) response.metadata().get("workspaceRefs");
+        assertThat(String.valueOf(refs.get("conversation_history"))).startsWith("/conversation_history/");
+        assertThat(String.valueOf(refs.get("latest_observation"))).contains("/observations/");
+        assertThat(String.valueOf(response.metadata().get("workspace"))).contains("/conversation_history");
+        assertThat(String.valueOf(response.metadata().get("workspace"))).contains("/observations");
+        assertThat(String.valueOf(response.metadata().get("workspace"))).contains("/artifacts");
+        assertThat(String.valueOf(response.metadata().get("workspace"))).contains("/evidence");
+
+        String historyPath = String.valueOf(refs.get("conversation_history"));
+        assertThat(agentWorkspace.read(conversationId, historyPath).content())
+                .contains("Archived conversation history")
+                .contains("娲诲姩鎶ュ悕瑙勫垯");
+        assertThat(agentWorkspace.search(conversationId, "/observations", "rule_inquiry")).isNotEmpty();
     }
 
     @TestConfiguration

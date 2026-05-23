@@ -9,12 +9,26 @@ import org.springframework.stereotype.Service;
 import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.core.capability.CapabilityDescriptor;
 import com.example.marketing.core.context.MarketingAgentContext;
+import com.example.marketing.core.model.ContextSummary;
+import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.state.ConversationSession;
+import com.example.marketing.core.workspace.AgentWorkspace;
+import com.example.marketing.core.workspace.WorkspaceDocument;
+import com.example.marketing.core.workspace.WorkspaceEntry;
 
 @Service
 public class ContextAssembler {
+    private static final int RECENT_VISIBLE_MESSAGE_LIMIT = 12;
+    private final AgentWorkspace workspace;
+
+    public ContextAssembler(AgentWorkspace workspace) {
+        this.workspace = workspace;
+    }
+
     public HarnessContext assemble(MarketingRequest request, ConversationSession session,
                                    List<CapabilityDescriptor> capabilities) {
+        Map<String, Object> workspaceRefs = refreshConversationHistory(request, session);
+        List<WorkspaceEntry> workspaceEntries = workspace.list(request.conversationId(), "/");
         HarnessMemory memory = new HarnessMemory(
                 recentVisibleMessages(session),
                 lastItems(session.handoffSummaries(), 8),
@@ -23,10 +37,52 @@ public class ContextAssembler {
                 session.state(),
                 mapValue(session.state().get("task_memory")),
                 mapValue(session.state().get("artifact_memory")),
-                mapValue(session.state().get("decision_memory"))
+                mapValue(session.state().get("decision_memory")),
+                workspaceRefs,
+                workspaceEntries
         );
         return new HarnessContext(MarketingAgentContext.from(request), memory, capabilities,
                 compressedContext(request, memory, capabilities));
+    }
+
+    private Map<String, Object> refreshConversationHistory(MarketingRequest request, ConversationSession session) {
+        List<ConversationMessage> visibleMessages = session.messages().stream()
+                .filter(ConversationMessage::visible)
+                .toList();
+        int archiveCount = Math.max(0, visibleMessages.size() - RECENT_VISIBLE_MESSAGE_LIMIT);
+        Map<String, Object> refs = new LinkedHashMap<>(mapValue(session.state().get("workspace_refs")));
+        if (archiveCount == 0) {
+            return refs;
+        }
+        String path = "/conversation_history/" + request.conversationId() + ".md";
+        String content = conversationHistoryMarkdown(visibleMessages.subList(0, archiveCount));
+        WorkspaceDocument document = workspace.write(request.conversationId(), path, content, Map.of(
+                "type", "conversation_history",
+                "conversation_id", request.conversationId(),
+                "archived_message_count", archiveCount
+        ));
+        refs.put("conversation_history", document.path());
+        refs.put("conversation_history_archived_message_count", archiveCount);
+        session.state().put("workspace_refs", refs);
+        if (session.handoffSummaries().stream().noneMatch(summary -> document.path()
+                .equals(String.valueOf(summary.metadata().get("workspace_path"))))) {
+            session.addHandoffSummary(ContextSummary.of("workspace", "conversation_history", "archived",
+                    "Older visible conversation messages were archived to workspace.",
+                    Map.of("workspace_path", document.path(), "archived_message_count", archiveCount)));
+        }
+        return refs;
+    }
+
+    private String conversationHistoryMarkdown(List<ConversationMessage> messages) {
+        StringBuilder builder = new StringBuilder("# Archived conversation history\n\n");
+        for (ConversationMessage message : messages) {
+            builder.append("## ").append(message.createdAt()).append(" ")
+                    .append(message.role()).append(" [").append(message.source()).append("/")
+                    .append(message.eventType()).append("]\n\n")
+                    .append(message.content() == null ? "" : message.content())
+                    .append("\n\n");
+        }
+        return builder.toString();
     }
 
     private String compressedContext(MarketingRequest request, HarnessMemory memory,
@@ -47,6 +103,11 @@ public class ContextAssembler {
         builder.append("Visible objects: ").append(memory.visibleObjects().keySet()).append("\n");
         builder.append("Pending actions: ").append(memory.pendingActions().keySet()).append("\n");
         builder.append("Working state keys: ").append(memory.workingState().keySet()).append("\n");
+        builder.append("Workspace refs: ").append(memory.workspaceRefs()).append("\n");
+        builder.append("Workspace root entries: ")
+                .append(memory.workspaceEntries().stream().map(WorkspaceEntry::path).toList()).append("\n");
+        builder.append("Use workspace refs for recoverable history, observations, artifacts, and evidence instead ")
+                .append("of assuming truncated prompt context is complete.\n");
         return builder.toString();
     }
 
@@ -59,9 +120,11 @@ public class ContextAssembler {
 
     private List<com.example.marketing.core.model.ConversationMessage> recentVisibleMessages(
             ConversationSession session) {
-        return session.messages().stream()
+        List<ConversationMessage> visibleMessages = session.messages().stream()
                 .filter(com.example.marketing.core.model.ConversationMessage::visible)
-                .skip(Math.max(0, session.messages().size() - 12))
+                .toList();
+        return visibleMessages.stream()
+                .skip(Math.max(0, visibleMessages.size() - RECENT_VISIBLE_MESSAGE_LIMIT))
                 .toList();
     }
 
