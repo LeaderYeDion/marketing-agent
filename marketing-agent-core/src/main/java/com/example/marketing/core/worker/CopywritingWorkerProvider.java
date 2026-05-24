@@ -1,4 +1,4 @@
-package com.example.marketing.core.capability;
+package com.example.marketing.core.worker;
 
 import java.util.List;
 import java.util.Map;
@@ -10,37 +10,34 @@ import com.example.marketing.core.model.ConversationMessage;
 import com.example.marketing.core.observation.Observation;
 
 @Service
-public class CopywritingCapabilityProvider implements CapabilityProvider {
+public class CopywritingWorkerProvider implements WorkerProvider {
     @Override
     public String providerName() {
         return "copywriting_provider";
     }
 
     @Override
-    public boolean supports(CapabilityDescriptor descriptor) {
+    public boolean supports(WorkerDescriptor descriptor) {
         return descriptor != null && ("copywriting".equals(descriptor.name())
                 || "notification_copywriting".equals(descriptor.name()));
     }
 
     @Override
-    public Observation execute(CapabilityExecutionRequest executionRequest, MarketingRequest marketingRequest) {
+    public Observation execute(WorkerExecutionRequest executionRequest, MarketingRequest marketingRequest) {
         Map<String, Object> inputs = executionRequest.inputs();
-        String product = firstNonBlank(value(inputs.get("product")), value(marketingRequest.product()), "相关商品");
-        String channel = firstNonBlank(value(inputs.get("channel")), value(marketingRequest.channel()), "社群");
-        String audience = firstNonBlank(value(inputs.get("audience")), value(marketingRequest.audience()), "目标用户");
-        String observations = firstNonBlank(value(inputs.get("source_observations")), "以上规则和表格检查结果");
-        String draft = """
-                社群通知草稿：
-                %s 的小伙伴可以关注本次活动。我们已经结合 %s 完成了规则与素材检查，适合的商品会按活动要求参与优惠。
-                如果你正在考虑下单，可以优先查看活动商品、优惠条件和有效时间，确认满足条件后再参与。
-                """.formatted(audience, observations).trim();
+        String product = firstNonBlank(value(inputs.get("product")), value(marketingRequest.product()), "product");
+        String channel = firstNonBlank(value(inputs.get("channel")), value(marketingRequest.channel()), "channel");
+        String audience = firstNonBlank(value(inputs.get("audience")), value(marketingRequest.audience()), "audience");
+        String observations = firstNonBlank(value(inputs.get("source_observations")), "No prior observations.");
+        String draft = "Copy for " + channel + " about " + product + ": focus on " + audience
+                + ". Available evidence: " + observations;
         ConversationMessage message = ConversationMessage.assistant(draft, providerName(), "final_answer",
-                Map.of("capability", executionRequest.capability().name(), "product", product, "channel", channel));
+                Map.of("worker", executionRequest.worker().name(), "product", product, "channel", channel));
         return new Observation(
                 null,
                 executionRequest.runId(),
                 executionRequest.taskNodeId(),
-                executionRequest.capability().name(),
+                executionRequest.worker().name(),
                 "succeeded",
                 draft,
                 Map.of("source_observations", observations),
@@ -54,7 +51,7 @@ public class CopywritingCapabilityProvider implements CapabilityProvider {
                 false,
                 List.of(),
                 List.of(message),
-                Map.of("current_task", Map.of("type", executionRequest.capability().name(), "status", "succeeded"))
+                Map.of("current_task", Map.of("type", executionRequest.worker().name(), "status", "succeeded"))
         );
     }
 
@@ -73,3 +70,4 @@ public class CopywritingCapabilityProvider implements CapabilityProvider {
         return value == null ? "" : value.toString();
     }
 }
+

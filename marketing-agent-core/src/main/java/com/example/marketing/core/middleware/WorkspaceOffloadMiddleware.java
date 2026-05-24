@@ -43,7 +43,7 @@ public class WorkspaceOffloadMiddleware implements HarnessMiddleware {
                     .toList());
         }
         return new Observation(observation.id(), observation.runId(), observation.taskNodeId(),
-                observation.capabilityName(), observation.status(), observation.summary(), evidence, artifacts,
+                observation.workerName(), observation.status(), observation.summary(), evidence, artifacts,
                 observation.confidence(), observation.missingInputs(), observation.riskLevel(),
                 observation.requiresApproval(), observation.actionProposal(), observation.errorType(),
                 observation.retryable(), observation.visibleObjects(), observation.messagesToCommit(),
@@ -61,7 +61,7 @@ public class WorkspaceOffloadMiddleware implements HarnessMiddleware {
         payload.put("run_id", observation.runId());
         payload.put("task_graph_id", graph == null ? "" : graph.id());
         payload.put("task_node_id", observation.taskNodeId());
-        payload.put("capability_name", observation.capabilityName());
+        payload.put("worker_name", observation.workerName());
         payload.put("status", observation.status());
         payload.put("summary", observation.summary());
         payload.put("evidence", observation.evidence());
@@ -84,7 +84,7 @@ public class WorkspaceOffloadMiddleware implements HarnessMiddleware {
                         "run_id", observation.runId(),
                         "task_graph_id", graph == null ? "" : graph.id(),
                         "task_node_id", observation.taskNodeId(),
-                        "capability_name", observation.capabilityName(),
+                        "worker_name", observation.workerName(),
                         "status", observation.status()));
         WorkspaceRefs refs = new WorkspaceRefs(document.path(), evidenceRefs, artifactRefs);
         invocation.put("workspace_refs:" + observation.id(), refs.asMap());
@@ -107,7 +107,7 @@ public class WorkspaceOffloadMiddleware implements HarnessMiddleware {
                             "run_id", observation.runId(),
                             "task_graph_id", graph == null ? "" : graph.id(),
                             "task_node_id", observation.taskNodeId(),
-                            "capability_name", observation.capabilityName(),
+                            "worker_name", observation.workerName(),
                             "kind", collection,
                             "key", key,
                             "value", value
@@ -117,7 +117,7 @@ public class WorkspaceOffloadMiddleware implements HarnessMiddleware {
                             "run_id", observation.runId(),
                             "task_graph_id", graph == null ? "" : graph.id(),
                             "task_node_id", observation.taskNodeId(),
-                            "capability_name", observation.capabilityName(),
+                            "worker_name", observation.workerName(),
                             "key", key));
             refs.add(Map.of("kind", collection, "key", key, "workspace_path", document.path()));
         });
@@ -147,3 +147,4 @@ public class WorkspaceOffloadMiddleware implements HarnessMiddleware {
         }
     }
 }
+

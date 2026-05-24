@@ -1,6 +1,6 @@
 # copywriting
 
-Use this capability when the user asks for marketing copy, community notices, SMS/push text, promotion summaries, or follow-up communication after another capability has produced observations.
+Use this worker when the user asks for marketing copy, community notices, SMS/push text, promotion summaries, or follow-up communication after another worker has produced observations.
 
 ## Inputs
 

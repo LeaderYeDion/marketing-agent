@@ -1,9 +1,9 @@
-package com.example.marketing.core.capability;
+package com.example.marketing.core.worker;
 
 import java.util.List;
 import java.util.Map;
 
-public record CapabilityManifestDescriptor(
+public record WorkerManifestDescriptor(
         String name,
         String description,
         String provider,
@@ -20,11 +20,11 @@ public record CapabilityManifestDescriptor(
         List<String> postconditions,
         List<String> skillRefs,
         List<String> evalSuites,
-        String capabilityType,
+        String workerType,
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema
 ) {
-    public CapabilityManifestDescriptor {
+    public WorkerManifestDescriptor {
         description = description == null ? "" : description;
         provider = provider == null ? "" : provider;
         executionMode = executionMode == null || executionMode.isBlank() ? "deterministic" : executionMode;
@@ -38,15 +38,16 @@ public record CapabilityManifestDescriptor(
         postconditions = postconditions == null ? List.of() : List.copyOf(postconditions);
         skillRefs = skillRefs == null ? List.of() : List.copyOf(skillRefs);
         evalSuites = evalSuites == null ? List.of() : List.copyOf(evalSuites);
-        capabilityType = capabilityType == null ? "" : capabilityType;
+        workerType = workerType == null ? "" : workerType;
         inputSchema = inputSchema == null ? Map.of() : Map.copyOf(inputSchema);
         outputSchema = outputSchema == null ? Map.of() : Map.copyOf(outputSchema);
     }
 
-    public CapabilityDescriptor toCapabilityDescriptor() {
-        return new CapabilityDescriptor(name, description, requiredInputs, outputContract, permissions, sideEffects,
-                requiresHumanApproval, riskLevel, provider, composableWith, fallbacks, capabilityType,
+    public WorkerDescriptor toWorkerDescriptor() {
+        return new WorkerDescriptor(name, description, requiredInputs, outputContract, permissions, sideEffects,
+                requiresHumanApproval, riskLevel, provider, composableWith, fallbacks, workerType,
                 inputSchema.isEmpty() ? null : inputSchema, outputSchema.isEmpty() ? null : outputSchema,
                 preconditions, postconditions, executionMode, skillRefs);
     }
 }
+

@@ -5,7 +5,7 @@ import java.util.List;
 public record ObservationEvaluation(
         String observationId,
         String taskNodeId,
-        String capabilityName,
+        String workerName,
         boolean sufficient,
         boolean grounded,
         boolean usable,
@@ -17,3 +17,4 @@ public record ObservationEvaluation(
         reasons = reasons == null ? List.of() : List.copyOf(reasons);
     }
 }
+

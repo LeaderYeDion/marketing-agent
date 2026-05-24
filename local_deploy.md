@@ -187,8 +187,8 @@ Browser or Node CLI
   -> /api/v1/marketing-agent/chat or /chat/stream
   -> MarketingHarness
   -> LLM TaskPlanner
-  -> Capability providers / sub-agents
+  -> Worker providers / sub-agents
   -> SSE events and final response
 ```
 
-这个形态已经可以用于本地验证 harness planner、task graph、capability 编排、SSE 事件、HITL 反馈和最终回答。
+这个形态已经可以用于本地验证 harness planner、task graph、worker 编排、SSE 事件、HITL 反馈和最终回答。

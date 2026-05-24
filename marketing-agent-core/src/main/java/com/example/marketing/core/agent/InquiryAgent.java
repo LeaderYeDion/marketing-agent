@@ -44,8 +44,8 @@ public class InquiryAgent implements SubAgent {
     }
 
     @Override
-    public SubAgentCapabilities capabilities() {
-        return SubAgentCapabilities.stateless(java.util.Set.of("question"));
+    public SubAgentWorkers workers() {
+        return SubAgentWorkers.stateless(java.util.Set.of("question"));
     }
 
     @Override
@@ -74,7 +74,7 @@ public class InquiryAgent implements SubAgent {
         List<ConversationMessage> commits = new ArrayList<>();
         ChatModel chatModel = chatModelProvider.getIfAvailable();
         if (chatModel == null) {
-            String message = "当前没有可用的大模型配置，无法完成开放式规则咨询。请稍后重试。";
+            String message = "No chat model is configured, so the rule inquiry agent cannot run.";
             commits.add(ConversationMessage.assistant(message, name(), "failure", Map.of()));
             return SubAgentResult.failed(invocation.invocationId(), message, message,
                     Map.of("error_code", "CHAT_MODEL_NOT_AVAILABLE"), commits);
@@ -91,21 +91,22 @@ public class InquiryAgent implements SubAgent {
                     tools.callbacks(),
                     AgenticSubAgentSupport.toMessages(inquirySystemMessage(), invocation, question, List.of()),
                     invocation.conversationId() + ":" + invocation.invocationId());
-            String text = blankToDefault(answer.getText(), "我没有得到足够的信息完成判断，请补充活动、优惠或报名规则相关背景。");
+            String text = blankToDefault(answer.getText(),
+                    "I do not have enough information to answer; please provide more activity, promotion, or enrollment rule context.");
             sink.token(text);
             commits.add(ConversationMessage.assistant(text, name(), "final_answer",
                     Map.of("invocationId", invocation.invocationId())));
             return new SubAgentResult(invocation.invocationId(), "succeeded", text,
-                    "规则咨询智能体已基于可用技能、工具和检索证据回答用户问题：" + question,
+                    "Rule inquiry agent answered with available skills, tools, and retrieved evidence: " + question,
                     Map.of("current_task", Map.of("type", "rule_inquiry", "status", "succeeded")),
                     List.of(), commits, Map.of());
         }
         catch (RuntimeException ex) {
-            String message = "我在规则咨询推理过程中遇到错误：" + ex.getMessage();
+            String message = "Rule inquiry agent failed during reasoning: " + ex.getMessage();
             commits.add(ConversationMessage.assistant(message, name(), "failure",
                     Map.of("error", ex.getClass().getSimpleName())));
             return SubAgentResult.failed(invocation.invocationId(), message,
-                    "规则咨询智能体执行失败：" + ex.getMessage(),
+                    "Rule inquiry agent execution failed: " + ex.getMessage(),
                     Map.of("error_code", "AGENT_RUNTIME_ERROR"), commits);
         }
     }
@@ -127,14 +128,14 @@ public class InquiryAgent implements SubAgent {
 
     private String inquirySystemMessage() {
         return """
-                你是规则咨询领域智能体。用户可能输入任何内容，包括闲聊、无关问题、模糊问题、具体规则问题、
-                或对已有卡片/活动/优惠的追问。你的职责是理解意图，决定是否需要工具，基于观察结果回答。
+                You are a marketing rule inquiry sub-agent.
+                Understand the user intent, decide whether tools are needed, and answer from observations.
 
-                可接受行为：
-                - 问题足够简单且上下文已充分时，直接回答。
-                - 需要证据时，调用检索工具，必要时多次检索。
-                - 召回内容价值低时，说明不足并追问，或改写 query 再查。
-                - 用户问题超出营销规则/活动/报名/优惠范围时，礼貌说明边界，并尽量给出可转向的问题。
+                Guidelines:
+                - Answer directly when the question is simple and context is sufficient.
+                - Use retrieval or workspace tools when evidence is needed.
+                - If evidence is weak, ask for clarification or rewrite the query and search again.
+                - If the user asks outside marketing rules, activities, enrollment, or promotions, state the boundary politely.
                 """;
     }
 
@@ -229,3 +230,4 @@ public class InquiryAgent implements SubAgent {
     }
 
 }
+

@@ -11,18 +11,18 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 import com.example.marketing.core.agent.SubAgentProfileRegistry;
-import com.example.marketing.core.capability.CapabilityDescriptor;
-import com.example.marketing.core.capability.CapabilityRegistry;
+import com.example.marketing.core.worker.WorkerDescriptor;
+import com.example.marketing.core.worker.WorkerRegistry;
 import com.example.marketing.core.task.TaskGraph;
 import com.example.marketing.core.task.TaskNode;
 
 @Service
 public class TaskGraphValidator {
-    private final CapabilityRegistry capabilityRegistry;
+    private final WorkerRegistry workerRegistry;
     private final SubAgentProfileRegistry subAgentProfileRegistry;
 
-    public TaskGraphValidator(CapabilityRegistry capabilityRegistry, SubAgentProfileRegistry subAgentProfileRegistry) {
-        this.capabilityRegistry = capabilityRegistry;
+    public TaskGraphValidator(WorkerRegistry workerRegistry, SubAgentProfileRegistry subAgentProfileRegistry) {
+        this.workerRegistry = workerRegistry;
         this.subAgentProfileRegistry = subAgentProfileRegistry;
     }
 
@@ -34,7 +34,7 @@ public class TaskGraphValidator {
             return new TaskGraphValidationResult(null, List.of("TASK_GRAPH_NULL"), warnings, repairs);
         }
         List<TaskNode> nodes = removeDuplicateIds(graph.nodes(), warnings, repairs);
-        nodes = removeUnknownCapabilities(nodes, errors, repairs);
+        nodes = removeUnknownWorkers(nodes, errors, repairs);
         nodes = repairDependencies(nodes, warnings, repairs);
         if (hasCycle(nodes)) {
             warnings.add("TASK_GRAPH_DEPENDENCY_CYCLE");
@@ -54,7 +54,7 @@ public class TaskGraphValidator {
 
     private void validateDelegateTaskAgents(List<TaskNode> nodes, List<String> errors) {
         for (TaskNode node : nodes) {
-            if (!"delegate_task".equals(node.capabilityName())) {
+            if (!"delegate_task".equals(node.workerName())) {
                 continue;
             }
             String agentName = String.valueOf(node.inputs().getOrDefault("agentName", ""));
@@ -78,7 +78,7 @@ public class TaskGraphValidator {
                 warnings.add("DUPLICATE_NODE_ID:" + node.id());
                 repairs.add("Renamed duplicate node id " + node.id() + " to " + id + ".");
                 seen.add(id);
-                repaired.add(new TaskNode(id, node.goal(), node.capabilityName(), node.inputs(), node.dependsOn(),
+                repaired.add(new TaskNode(id, node.goal(), node.workerName(), node.inputs(), node.dependsOn(),
                         node.completionCriteria(), node.priority(), node.plannerRationale(), node.retryCount(),
                         node.status(), node.riskLevel(), node.observationId()));
             }
@@ -89,17 +89,17 @@ public class TaskGraphValidator {
         return repaired;
     }
 
-    private List<TaskNode> removeUnknownCapabilities(List<TaskNode> nodes, List<String> errors,
+    private List<TaskNode> removeUnknownWorkers(List<TaskNode> nodes, List<String> errors,
                                                      List<String> repairs) {
         List<TaskNode> repaired = nodes.stream()
-                .filter(node -> capabilityRegistry.find(node.capabilityName()).isPresent())
+                .filter(node -> workerRegistry.find(node.workerName()).isPresent())
                 .toList();
         Set<String> keptIds = repaired.stream().map(TaskNode::id).collect(Collectors.toSet());
         nodes.stream()
                 .filter(node -> !keptIds.contains(node.id()))
                 .forEach(node -> {
-                    errors.add("UNKNOWN_CAPABILITY:" + node.id() + ":" + node.capabilityName());
-                    repairs.add("Removed node " + node.id() + " because capability " + node.capabilityName()
+                    errors.add("UNKNOWN_CAPABILITY:" + node.id() + ":" + node.workerName());
+                    repairs.add("Removed node " + node.id() + " because worker " + node.workerName()
                             + " is not registered.");
                 });
         return repaired;
@@ -119,10 +119,10 @@ public class TaskGraphValidator {
 
     private void validateSideEffectBoundaries(List<TaskNode> nodes, List<String> warnings) {
         for (TaskNode node : nodes) {
-            CapabilityDescriptor capability = capabilityRegistry.find(node.capabilityName()).orElse(null);
-            if (capability != null && (capability.sideEffects() || capability.requiresHumanApproval())
+            WorkerDescriptor worker = workerRegistry.find(node.workerName()).orElse(null);
+            if (worker != null && (worker.sideEffects() || worker.requiresHumanApproval())
                     && node.dependsOn().isEmpty()) {
-                warnings.add("SIDE_EFFECT_NODE_HAS_NO_UPSTREAM_PROPOSAL:" + node.id() + ":" + capability.name());
+                warnings.add("SIDE_EFFECT_NODE_HAS_NO_UPSTREAM_PROPOSAL:" + node.id() + ":" + worker.name());
             }
         }
     }
@@ -130,11 +130,11 @@ public class TaskGraphValidator {
     private void validateRequiredInputSources(List<TaskNode> nodes, List<String> warnings) {
         Set<String> ids = nodes.stream().map(TaskNode::id).collect(Collectors.toSet());
         for (TaskNode node : nodes) {
-            CapabilityDescriptor capability = capabilityRegistry.find(node.capabilityName()).orElse(null);
-            if (capability == null) {
+            WorkerDescriptor worker = workerRegistry.find(node.workerName()).orElse(null);
+            if (worker == null) {
                 continue;
             }
-            for (String input : capability.requiredInputs()) {
+            for (String input : worker.requiredInputs()) {
                 if (hasInput(node.inputs(), input) || !node.dependsOn().isEmpty()) {
                     continue;
                 }
@@ -193,3 +193,4 @@ public class TaskGraphValidator {
         return candidate;
     }
 }
+

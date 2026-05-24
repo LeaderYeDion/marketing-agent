@@ -18,8 +18,8 @@ public class GeneralPurposeAgent implements SubAgent {
     }
 
     @Override
-    public SubAgentCapabilities capabilities() {
-        return SubAgentCapabilities.stateless(java.util.Set.of("task", "expectedOutput"));
+    public SubAgentWorkers workers() {
+        return SubAgentWorkers.stateless(java.util.Set.of("task", "expectedOutput"));
     }
 
     @Override
@@ -40,9 +40,9 @@ public class GeneralPurposeAgent implements SubAgent {
     public SubAgentResult run(SubAgentInvocation invocation, MarketingRequest request) {
         String expected = stringValue(invocation.inputs().get("expectedOutput"));
         String refs = stringValue(invocation.inputs().get("contextRefs"));
-        String summary = "已在隔离上下文接收委派任务：" + invocation.task()
-                + (expected.isBlank() ? "" : "。期望输出：" + expected)
-                + (refs.isBlank() ? "" : "。可用上下文引用：" + refs);
+        String summary = "Delegated task received in isolated context: " + invocation.task()
+                + (expected.isBlank() ? "" : ". Expected output: " + expected)
+                + (refs.isBlank() ? "" : ". Context refs: " + refs);
         return new SubAgentResult(invocation.invocationId(), "succeeded", summary,
                 summary, Map.of("subagent", name(), "delegated_task", invocation.task()),
                 List.of(), List.of(ConversationMessage.assistant(summary, name(), "delegated_summary",
@@ -53,3 +53,4 @@ public class GeneralPurposeAgent implements SubAgent {
         return value == null ? "" : value.toString();
     }
 }
+

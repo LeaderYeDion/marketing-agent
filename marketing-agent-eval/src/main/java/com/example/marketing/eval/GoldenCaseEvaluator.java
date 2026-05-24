@@ -36,10 +36,10 @@ public class GoldenCaseEvaluator {
             failures.add("expected delegate " + evalCase.expectedDelegateTo() + " but decision was " + decision);
         }
         String taskGraphText = String.valueOf(response.metadata().get("taskGraph"));
-        if (evalCase.expectedCapabilities() != null) {
-            for (String capability : evalCase.expectedCapabilities()) {
-                if (!capability.isBlank() && !taskGraphText.contains(capability) && !decision.contains(capability)) {
-                    failures.add("expected capability " + capability + " but task graph was " + taskGraphText);
+        if (evalCase.expectedWorkers() != null) {
+            for (String worker : evalCase.expectedWorkers()) {
+                if (!worker.isBlank() && !taskGraphText.contains(worker) && !decision.contains(worker)) {
+                    failures.add("expected worker " + worker + " but task graph was " + taskGraphText);
                 }
             }
         }
@@ -89,3 +89,4 @@ public class GoldenCaseEvaluator {
         }
     }
 }
+

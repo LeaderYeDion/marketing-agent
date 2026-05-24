@@ -4,7 +4,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 import com.example.marketing.core.policy.RiskAssessment;
 import com.example.marketing.core.policy.RiskPolicyEngine;
 import com.example.marketing.core.task.TaskGraph;
@@ -24,12 +24,12 @@ public class ToolPermissionMiddleware implements HarnessMiddleware {
     }
 
     @Override
-    public CapabilityCallDecision beforeCapabilityCall(HarnessInvocationContext invocation, TaskGraph graph,
-                                                       TaskNode node, CapabilityDescriptor capability) {
-        RiskAssessment risk = riskPolicyEngine.assess(capability, node, node.inputs());
+    public WorkerCallDecision beforeWorkerCall(HarnessInvocationContext invocation, TaskGraph graph,
+                                                       TaskNode node, WorkerDescriptor worker) {
+        RiskAssessment risk = riskPolicyEngine.assess(worker, node, node.inputs());
         invocation.put("risk:" + node.id(), risk);
         invocation.trace().add(com.example.marketing.core.harness.HarnessTraceEvent.of(invocation.runId(),
-                "tool_permission_evaluated", capability.name(), risk.requiresApproval() ? "approval_required" :
+                "tool_permission_evaluated", worker.name(), risk.requiresApproval() ? "approval_required" :
                 "allowed", Map.of(
                         "taskGraphId", graph.id(),
                         "taskNodeId", node.id(),
@@ -38,6 +38,7 @@ public class ToolPermissionMiddleware implements HarnessMiddleware {
                         "readOnly", risk.readOnly(),
                         "reason", risk.reason()
                 )));
-        return CapabilityCallDecision.proceed(risk);
+        return WorkerCallDecision.proceed(risk);
     }
 }
+

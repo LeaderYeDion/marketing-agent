@@ -7,8 +7,8 @@ import com.example.marketing.core.model.SubAgentResult;
 public interface SubAgent {
     String name();
 
-    default SubAgentCapabilities capabilities() {
-        return SubAgentCapabilities.stateless(java.util.Set.of());
+    default SubAgentWorkers workers() {
+        return SubAgentWorkers.stateless(java.util.Set.of());
     }
 
     default SubAgentProfile profile() {
@@ -17,3 +17,4 @@ public interface SubAgent {
 
     SubAgentResult run(SubAgentInvocation invocation, MarketingRequest request);
 }
+

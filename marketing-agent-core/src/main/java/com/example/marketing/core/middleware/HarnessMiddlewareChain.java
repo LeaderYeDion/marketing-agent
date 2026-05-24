@@ -5,7 +5,7 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 import com.example.marketing.core.memory.HarnessContext;
 import com.example.marketing.core.observation.Observation;
 import com.example.marketing.core.task.TaskGraph;
@@ -49,11 +49,11 @@ public class HarnessMiddlewareChain {
         middlewares.forEach(middleware -> middleware.afterModelCall(invocation, purpose, status));
     }
 
-    public CapabilityCallDecision beforeCapabilityCall(HarnessInvocationContext invocation, TaskGraph graph,
-                                                       TaskNode node, CapabilityDescriptor capability) {
-        CapabilityCallDecision decision = CapabilityCallDecision.proceed();
+    public WorkerCallDecision beforeWorkerCall(HarnessInvocationContext invocation, TaskGraph graph,
+                                                       TaskNode node, WorkerDescriptor worker) {
+        WorkerCallDecision decision = WorkerCallDecision.proceed();
         for (HarnessMiddleware middleware : middlewares) {
-            decision = decision.merge(middleware.beforeCapabilityCall(invocation, graph, node, capability));
+            decision = decision.merge(middleware.beforeWorkerCall(invocation, graph, node, worker));
             if (!decision.allowed()) {
                 return decision;
             }
@@ -61,9 +61,9 @@ public class HarnessMiddlewareChain {
         return decision;
     }
 
-    public void afterCapabilityCall(HarnessInvocationContext invocation, TaskGraph graph, TaskNode node,
-                                    CapabilityDescriptor capability, Observation observation) {
-        middlewares.forEach(middleware -> middleware.afterCapabilityCall(invocation, graph, node, capability,
+    public void afterWorkerCall(HarnessInvocationContext invocation, TaskGraph graph, TaskNode node,
+                                    WorkerDescriptor worker, Observation observation) {
+        middlewares.forEach(middleware -> middleware.afterWorkerCall(invocation, graph, node, worker,
                 observation));
     }
 
@@ -81,8 +81,9 @@ public class HarnessMiddlewareChain {
     }
 
     public void onHumanApprovalRequired(HarnessInvocationContext invocation, TaskGraph graph, TaskNode node,
-                                        CapabilityDescriptor capability, Observation observation) {
-        middlewares.forEach(middleware -> middleware.onHumanApprovalRequired(invocation, graph, node, capability,
+                                        WorkerDescriptor worker, Observation observation) {
+        middlewares.forEach(middleware -> middleware.onHumanApprovalRequired(invocation, graph, node, worker,
                 observation));
     }
 }
+

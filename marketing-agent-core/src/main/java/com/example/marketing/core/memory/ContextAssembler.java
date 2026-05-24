@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.core.agent.SubAgentProfile;
 import com.example.marketing.core.agent.SubAgentProfileRegistry;
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 import com.example.marketing.core.context.MarketingAgentContext;
 import com.example.marketing.core.model.ContextSummary;
 import com.example.marketing.core.model.ConversationMessage;
@@ -30,7 +30,7 @@ public class ContextAssembler {
     }
 
     public HarnessContext assemble(MarketingRequest request, ConversationSession session,
-                                   List<CapabilityDescriptor> capabilities) {
+                                   List<WorkerDescriptor> workers) {
         Map<String, Object> workspaceRefs = refreshConversationHistory(request, session);
         List<WorkspaceEntry> workspaceEntries = workspace.list(request.conversationId(), "/");
         HarnessMemory memory = new HarnessMemory(
@@ -46,8 +46,8 @@ public class ContextAssembler {
                 workspaceEntries
         );
         List<SubAgentProfile> subAgentProfiles = subAgentProfileRegistry.list();
-        return new HarnessContext(MarketingAgentContext.from(request), memory, capabilities, subAgentProfiles,
-                compressedContext(request, memory, capabilities, subAgentProfiles));
+        return new HarnessContext(MarketingAgentContext.from(request), memory, workers, subAgentProfiles,
+                compressedContext(request, memory, workers, subAgentProfiles));
     }
 
     private Map<String, Object> refreshConversationHistory(MarketingRequest request, ConversationSession session) {
@@ -91,21 +91,21 @@ public class ContextAssembler {
     }
 
     private String compressedContext(MarketingRequest request, HarnessMemory memory,
-                                     List<CapabilityDescriptor> capabilities,
+                                     List<WorkerDescriptor> workers,
                                      List<SubAgentProfile> subAgentProfiles) {
         StringBuilder builder = new StringBuilder();
         builder.append("User goal: ").append(request.query() == null ? "" : request.query()).append("\n");
-        builder.append("Capabilities:\n");
-        for (CapabilityDescriptor capability : capabilities) {
-            builder.append("- ").append(capability.name())
-                    .append(" description=").append(capability.description())
-                    .append(" required=").append(capability.requiredInputs())
-                    .append(" executionMode=").append(capability.executionMode())
-                    .append(" type=").append(capability.capabilityType())
-                    .append(" inputSchema=").append(capability.inputSchema())
-                    .append(" outputSchema=").append(capability.outputSchema())
-                    .append(" risk=").append(capability.riskLevel())
-                    .append(" provider=").append(capability.provider())
+        builder.append("Workers:\n");
+        for (WorkerDescriptor worker : workers) {
+            builder.append("- ").append(worker.name())
+                    .append(" description=").append(worker.description())
+                    .append(" required=").append(worker.requiredInputs())
+                    .append(" executionMode=").append(worker.executionMode())
+                    .append(" type=").append(worker.workerType())
+                    .append(" inputSchema=").append(worker.inputSchema())
+                    .append(" outputSchema=").append(worker.outputSchema())
+                    .append(" risk=").append(worker.riskLevel())
+                    .append(" provider=").append(worker.provider())
                     .append("\n");
         }
         builder.append("Delegation agents for delegate_task:\n");
@@ -155,3 +155,4 @@ public class ContextAssembler {
         return Map.of();
     }
 }
+

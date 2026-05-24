@@ -100,7 +100,7 @@ public class SkillRegistry implements SkillKnowledgeLoader {
                 csv(values.get("preconditions")),
                 csv(values.get("postconditions")),
                 values.getOrDefault("owner", ""),
-                values.getOrDefault("capabilityType", ""),
+                values.getOrDefault("workerType", ""),
                 values.getOrDefault("executionMode", "")
         );
     }
@@ -147,3 +147,4 @@ public class SkillRegistry implements SkillKnowledgeLoader {
         );
     }
 }
+

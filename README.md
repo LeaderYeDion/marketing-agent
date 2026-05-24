@@ -27,7 +27,7 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 ## 模块
 
 - `marketing-agent-api`：对外请求、响应、SSE 事件 DTO。
-- `marketing-agent-core`：harness 核心运行时，包含 task graph、planner、capability、memory、observation、policy、recovery、audit、telemetry、RAG 和 sub-agent provider。
+- `marketing-agent-core`：harness 核心运行时，包含 task graph、planner、worker、memory、observation、policy、recovery、audit、telemetry、RAG 和 sub-agent provider。
 - `marketing-agent-app`：Spring Boot 启动模块，对外提供 JSON 和 SSE 接口。
 - `marketing-agent-eval`：离线评测入口和 golden cases。
 
@@ -37,8 +37,8 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 user input
   -> ContextAssembler 汇总会话、记忆、可见对象、待确认动作、能力目录
   -> TaskPlanner 调用 LLM 生成结构化 DAG
-  -> MarketingHarness 校验 capability、依赖和风险
-  -> 可并行 ready nodes 进入 capability/sub-agent 执行
+  -> MarketingHarness 校验 worker、依赖和风险
+  -> 可并行 ready nodes 进入 worker/sub-agent 执行
   -> Observation 写入工作记忆
   -> RecoveryPolicyEngine 决定重试、fallback、追问或暂停
   -> 汇总回答 / HITL 确认 / 后续续跑
@@ -68,7 +68,7 @@ curl -N -X POST http://localhost:8080/api/v1/marketing-agent/chat/stream \
 
 ## 扩展方向
 
-- 新增营销能力时优先补充 `SkillDescriptor` / capability manifest，声明输入、输出契约、权限、风险、可组合能力和 fallback。
-- 业务执行逻辑优先封装为 `CapabilityProvider` 或 sub-agent provider，避免在 planner 或 harness 中写自然语言关键词分支。
+- 新增营销能力时优先补充 `SkillDescriptor` / worker manifest，声明输入、输出契约、权限、风险、可组合能力和 fallback。
+- 业务执行逻辑优先封装为 `WorkerProvider` 或 sub-agent provider，避免在 planner 或 harness 中写自然语言关键词分支。
 - 高风险副作用必须经过 `PendingActionStateMachine` 和 HITL 边界。
 - planner 的评测应围绕复杂跨域任务、并行节点、依赖顺序、恢复路径和追问质量持续扩展。

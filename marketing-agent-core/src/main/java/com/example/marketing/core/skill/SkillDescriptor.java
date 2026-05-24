@@ -22,7 +22,7 @@ public record SkillDescriptor(
         List<String> preconditions,
         List<String> postconditions,
         String owner,
-        String capabilityType,
+        String workerType,
         String executionMode
 ) {
     public SkillDescriptor {
@@ -37,7 +37,7 @@ public record SkillDescriptor(
         preconditions = preconditions == null ? List.of() : List.copyOf(preconditions);
         postconditions = postconditions == null ? List.of() : List.copyOf(postconditions);
         owner = owner == null ? "" : owner;
-        capabilityType = capabilityType == null ? "" : capabilityType;
+        workerType = workerType == null ? "" : workerType;
         executionMode = executionMode == null ? "" : executionMode;
     }
 
@@ -50,3 +50,4 @@ public record SkillDescriptor(
                 "", "");
     }
 }
+

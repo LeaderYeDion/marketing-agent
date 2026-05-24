@@ -4,7 +4,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 import com.example.marketing.core.harness.HarnessTraceEvent;
 import com.example.marketing.core.memory.HarnessContext;
 import com.example.marketing.core.observation.Observation;
@@ -21,7 +21,7 @@ public class TraceMiddleware implements HarnessMiddleware {
     @Override
     public void afterContextAssemble(HarnessInvocationContext invocation, HarnessContext context) {
         trace(invocation, "context_assembled", "ContextAssembler", "succeeded", Map.of(
-                "capabilityCount", context.capabilities().size(),
+                "workerCount", context.workers().size(),
                 "visibleObjects", context.memory().visibleObjects().size(),
                 "workspaceRefs", context.memory().workspaceRefs().keySet()
         ));
@@ -53,21 +53,21 @@ public class TraceMiddleware implements HarnessMiddleware {
     }
 
     @Override
-    public CapabilityCallDecision beforeCapabilityCall(HarnessInvocationContext invocation, TaskGraph graph,
-                                                       TaskNode node, CapabilityDescriptor capability) {
-        trace(invocation, "before_capability_call", capability.name(), "running", Map.of(
+    public WorkerCallDecision beforeWorkerCall(HarnessInvocationContext invocation, TaskGraph graph,
+                                                       TaskNode node, WorkerDescriptor worker) {
+        trace(invocation, "before_worker_call", worker.name(), "running", Map.of(
                 "taskGraphId", graph.id(),
                 "taskNodeId", node.id(),
-                "risk", capability.riskLevel(),
-                "requiresHumanApproval", capability.requiresHumanApproval()
+                "risk", worker.riskLevel(),
+                "requiresHumanApproval", worker.requiresHumanApproval()
         ));
-        return CapabilityCallDecision.proceed();
+        return WorkerCallDecision.proceed();
     }
 
     @Override
-    public void afterCapabilityCall(HarnessInvocationContext invocation, TaskGraph graph, TaskNode node,
-                                    CapabilityDescriptor capability, Observation observation) {
-        trace(invocation, "after_capability_call", capability.name(), observation.status(), Map.of(
+    public void afterWorkerCall(HarnessInvocationContext invocation, TaskGraph graph, TaskNode node,
+                                    WorkerDescriptor worker, Observation observation) {
+        trace(invocation, "after_worker_call", worker.name(), observation.status(), Map.of(
                 "taskGraphId", graph.id(),
                 "taskNodeId", node.id(),
                 "observationId", observation.id()
@@ -77,7 +77,7 @@ public class TraceMiddleware implements HarnessMiddleware {
     @Override
     public Observation beforeObservationCommit(HarnessInvocationContext invocation, TaskGraph graph,
                                                Observation observation) {
-        trace(invocation, "before_observation_commit", observation.capabilityName(), observation.status(), Map.of(
+        trace(invocation, "before_observation_commit", observation.workerName(), observation.status(), Map.of(
                 "taskGraphId", graph == null ? "" : graph.id(),
                 "taskNodeId", observation.taskNodeId(),
                 "observationId", observation.id()
@@ -87,7 +87,7 @@ public class TraceMiddleware implements HarnessMiddleware {
 
     @Override
     public void afterObservationCommit(HarnessInvocationContext invocation, TaskGraph graph, Observation observation) {
-        trace(invocation, "after_observation_commit", observation.capabilityName(), observation.status(), Map.of(
+        trace(invocation, "after_observation_commit", observation.workerName(), observation.status(), Map.of(
                 "taskGraphId", graph == null ? "" : graph.id(),
                 "taskNodeId", observation.taskNodeId(),
                 "observationId", observation.id()
@@ -96,8 +96,8 @@ public class TraceMiddleware implements HarnessMiddleware {
 
     @Override
     public void onHumanApprovalRequired(HarnessInvocationContext invocation, TaskGraph graph, TaskNode node,
-                                        CapabilityDescriptor capability, Observation observation) {
-        trace(invocation, "on_human_approval_required", capability.name(), observation.status(), Map.of(
+                                        WorkerDescriptor worker, Observation observation) {
+        trace(invocation, "on_human_approval_required", worker.name(), observation.status(), Map.of(
                 "taskGraphId", graph.id(),
                 "taskNodeId", node.id(),
                 "observationId", observation.id()
@@ -109,3 +109,4 @@ public class TraceMiddleware implements HarnessMiddleware {
         invocation.trace().add(HarnessTraceEvent.of(invocation.runId(), eventType, source, status, data));
     }
 }
+

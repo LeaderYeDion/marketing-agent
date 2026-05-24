@@ -7,40 +7,40 @@ import java.util.Set;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Component;
 
-import com.example.marketing.core.agent.SubAgentCapabilities;
+import com.example.marketing.core.agent.SubAgentWorkers;
 import com.example.marketing.core.agent.SubAgentRegistry;
-import com.example.marketing.core.capability.CapabilityDescriptor;
-import com.example.marketing.core.capability.CapabilityProvider;
+import com.example.marketing.core.worker.WorkerDescriptor;
+import com.example.marketing.core.worker.WorkerProvider;
 
 @Component
 public class SkillRegistryValidator implements InitializingBean {
     private final SkillRegistry skillRegistry;
     private final SubAgentRegistry subAgentRegistry;
-    private final List<CapabilityProvider> capabilityProviders;
+    private final List<WorkerProvider> workerProviders;
 
     public SkillRegistryValidator(SkillRegistry skillRegistry, SubAgentRegistry subAgentRegistry,
-                                  List<CapabilityProvider> capabilityProviders) {
+                                  List<WorkerProvider> workerProviders) {
         this.skillRegistry = skillRegistry;
         this.subAgentRegistry = subAgentRegistry;
-        this.capabilityProviders = capabilityProviders == null ? List.of() : capabilityProviders;
+        this.workerProviders = workerProviders == null ? List.of() : workerProviders;
     }
 
     @Override
     public void afterPropertiesSet() {
         skillRegistry.list().forEach(descriptor -> {
-            CapabilityDescriptor capability = CapabilityDescriptor.fromSkill(descriptor);
-            boolean supported = capabilityProviders.stream().anyMatch(provider -> provider.supports(capability));
+            WorkerDescriptor worker = WorkerDescriptor.fromSkill(descriptor);
+            boolean supported = workerProviders.stream().anyMatch(provider -> provider.supports(worker));
             if (!supported) {
                 throw new IllegalStateException("Skill " + descriptor.name()
-                        + " has no capability provider for entry: " + descriptor.entryAgent());
+                        + " has no worker provider for entry: " + descriptor.entryAgent());
             }
-            SubAgentCapabilities capabilities = subAgentRegistry.capabilities().get(descriptor.entryAgent());
-            if (capabilities == null) {
+            SubAgentWorkers workers = subAgentRegistry.workers().get(descriptor.entryAgent());
+            if (workers == null) {
                 validateSkillResource(descriptor);
                 return;
             }
             Set<String> missingInputs = new LinkedHashSet<>(descriptor.requiredInputs());
-            missingInputs.removeAll(capabilities.requiredInputs());
+            missingInputs.removeAll(workers.requiredInputs());
             if (!missingInputs.isEmpty()) {
                 throw new IllegalStateException("Skill " + descriptor.name()
                         + " requires inputs not supported by " + descriptor.entryAgent() + ": " + missingInputs);
@@ -56,3 +56,4 @@ public class SkillRegistryValidator implements InitializingBean {
         }
     }
 }
+

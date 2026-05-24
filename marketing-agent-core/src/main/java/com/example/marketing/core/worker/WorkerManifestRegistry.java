@@ -1,4 +1,4 @@
-package com.example.marketing.core.capability;
+package com.example.marketing.core.worker;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,25 +12,25 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 @Service
-public class CapabilityManifestRegistry {
-    private final List<CapabilityManifestDescriptor> manifests = loadManifests();
+public class WorkerManifestRegistry {
+    private final List<WorkerManifestDescriptor> manifests = loadManifests();
 
-    public List<CapabilityManifestDescriptor> list() {
+    public List<WorkerManifestDescriptor> list() {
         return manifests;
     }
 
-    public Optional<CapabilityManifestDescriptor> find(String name) {
+    public Optional<WorkerManifestDescriptor> find(String name) {
         return manifests.stream().filter(manifest -> manifest.name().equals(name)).findFirst();
     }
 
-    private List<CapabilityManifestDescriptor> loadManifests() {
+    private List<WorkerManifestDescriptor> loadManifests() {
         List<String> names = readResource("/skills/index.txt")
                 .map(content -> content.lines()
                         .map(String::trim)
                         .filter(line -> !line.isBlank() && !line.startsWith("#"))
                         .toList())
                 .orElse(List.of());
-        List<CapabilityManifestDescriptor> loaded = names.stream()
+        List<WorkerManifestDescriptor> loaded = names.stream()
                 .map(this::loadManifest)
                 .filter(Optional::isPresent)
                 .map(Optional::get)
@@ -41,11 +41,11 @@ public class CapabilityManifestRegistry {
         return appendDelegateTask(loaded);
     }
 
-    private Optional<CapabilityManifestDescriptor> loadManifest(String name) {
+    private Optional<WorkerManifestDescriptor> loadManifest(String name) {
         return readResource("/skills/" + name + "/manifest.yaml").map(this::parseManifest);
     }
 
-    private CapabilityManifestDescriptor parseManifest(String content) {
+    private WorkerManifestDescriptor parseManifest(String content) {
         Map<String, String> values = new LinkedHashMap<>();
         content.lines()
                 .map(String::trim)
@@ -60,7 +60,7 @@ public class CapabilityManifestRegistry {
         if (skillRefs.isEmpty() && !name.isBlank()) {
             skillRefs = List.of(name);
         }
-        return new CapabilityManifestDescriptor(
+        return new WorkerManifestDescriptor(
                 name,
                 values.getOrDefault("description", values.getOrDefault("summary", "")),
                 values.getOrDefault("provider", values.getOrDefault("entryAgent", "")),
@@ -78,18 +78,18 @@ public class CapabilityManifestRegistry {
                 csv(values.get("postconditions")),
                 skillRefs,
                 csv(values.get("evalSuites")),
-                values.getOrDefault("capabilityType", ""),
+                values.getOrDefault("workerType", ""),
                 Map.of(),
                 Map.of()
         );
     }
 
-    private List<CapabilityManifestDescriptor> appendDelegateTask(List<CapabilityManifestDescriptor> loaded) {
+    private List<WorkerManifestDescriptor> appendDelegateTask(List<WorkerManifestDescriptor> loaded) {
         if (loaded.stream().anyMatch(manifest -> "delegate_task".equals(manifest.name()))) {
             return loaded;
         }
-        java.util.ArrayList<CapabilityManifestDescriptor> all = new java.util.ArrayList<>(loaded);
-        all.add(new CapabilityManifestDescriptor(
+        java.util.ArrayList<WorkerManifestDescriptor> all = new java.util.ArrayList<>(loaded);
+        all.add(new WorkerManifestDescriptor(
                 "delegate_task",
                 "Delegate an isolated read-only analysis task to a bounded sub-agent and return summary plus workspace refs.",
                 "subagent_delegation_provider",
@@ -124,14 +124,14 @@ public class CapabilityManifestRegistry {
     }
 
     private Optional<String> readResource(String resourceName) {
-        try (InputStream stream = CapabilityManifestRegistry.class.getResourceAsStream(resourceName)) {
+        try (InputStream stream = WorkerManifestRegistry.class.getResourceAsStream(resourceName)) {
             if (stream == null) {
                 return Optional.empty();
             }
             return Optional.of(new String(stream.readAllBytes(), StandardCharsets.UTF_8));
         }
         catch (IOException ex) {
-            throw new IllegalStateException("Failed to load capability manifest resource: " + resourceName, ex);
+            throw new IllegalStateException("Failed to load worker manifest resource: " + resourceName, ex);
         }
     }
 
@@ -146,11 +146,12 @@ public class CapabilityManifestRegistry {
         return value != null && Boolean.parseBoolean(value.trim());
     }
 
-    private List<CapabilityManifestDescriptor> fallbackManifests() {
-        return List.of(new CapabilityManifestDescriptor("rule_inquiry",
+    private List<WorkerManifestDescriptor> fallbackManifests() {
+        return List.of(new WorkerManifestDescriptor("rule_inquiry",
                 "Answer marketing activity, promotion, enrollment and rule questions.",
                 "rule_inquiry_provider", "react", List.of("question"), List.of("markdown", "citations"),
                 List.of("knowledge.retrieve"), false, false, "low", List.of(), List.of(), List.of(), List.of(),
                 List.of("rule_inquiry"), List.of(), "read-only query", Map.of(), Map.of()));
     }
 }
+

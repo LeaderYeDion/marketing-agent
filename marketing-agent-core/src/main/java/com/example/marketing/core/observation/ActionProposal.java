@@ -5,7 +5,7 @@ import java.util.Map;
 public record ActionProposal(
         String id,
         String type,
-        String sourceCapability,
+        String sourceWorker,
         String summary,
         Map<String, Object> payload,
         String riskLevel
@@ -13,9 +13,10 @@ public record ActionProposal(
     public ActionProposal {
         id = id == null ? "" : id;
         type = type == null ? "" : type;
-        sourceCapability = sourceCapability == null ? "" : sourceCapability;
+        sourceWorker = sourceWorker == null ? "" : sourceWorker;
         summary = summary == null ? "" : summary;
         payload = payload == null ? Map.of() : Map.copyOf(payload);
         riskLevel = riskLevel == null ? "medium" : riskLevel;
     }
 }
+

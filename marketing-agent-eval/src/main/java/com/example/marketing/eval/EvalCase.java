@@ -11,7 +11,7 @@ public record EvalCase(
         String expectedAction,
         String expectedSkillName,
         String expectedDelegateTo,
-        List<String> expectedCapabilities,
+        List<String> expectedWorkers,
         String expectedHarnessStatus,
         int minTaskNodes,
         List<String> mustContain,

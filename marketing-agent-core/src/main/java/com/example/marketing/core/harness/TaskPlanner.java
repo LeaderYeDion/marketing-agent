@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 
 import com.example.marketing.api.MarketingRequest;
 import com.example.marketing.core.agent.SubAgentProfile;
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 import com.example.marketing.core.llm.JsonSupport;
 import com.example.marketing.core.llm.LlmGateway;
 import com.example.marketing.core.llm.LlmRequest;
@@ -93,7 +93,7 @@ public class TaskPlanner {
                     nodes.add(new PlannedNode(
                             text(item, "id"),
                             text(item, "goal"),
-                            firstNonBlank(text(item, "capabilityName"), text(item, "capability")),
+                            firstNonBlank(text(item, "workerName"), text(item, "worker")),
                             stringList(item.path("dependsOn")),
                             objectMap(item.path("inputs")),
                             text(item, "completionCriteria"),
@@ -111,8 +111,8 @@ public class TaskPlanner {
 
     private List<TaskNode> validateAndNormalizeNodes(List<PlannedNode> plannedNodes, MarketingRequest request,
                                                      HarnessContext context) {
-        Set<String> knownCapabilities = context.capabilities().stream()
-                .map(CapabilityDescriptor::name)
+        Set<String> knownWorkers = context.workers().stream()
+                .map(WorkerDescriptor::name)
                 .collect(Collectors.toSet());
         Set<String> knownSubAgents = context.subAgentProfiles().stream()
                 .map(SubAgentProfile::name)
@@ -121,11 +121,11 @@ public class TaskPlanner {
         Set<String> usedIds = new LinkedHashSet<>();
         int index = 1;
         for (PlannedNode planned : plannedNodes) {
-            if (!knownCapabilities.contains(planned.capabilityName())) {
+            if (!knownWorkers.contains(planned.workerName())) {
                 continue;
             }
-            Map<String, Object> inputs = mergedInputs(planned.inputs(), request, planned.capabilityName());
-            if ("delegate_task".equals(planned.capabilityName())
+            Map<String, Object> inputs = mergedInputs(planned.inputs(), request, planned.workerName());
+            if ("delegate_task".equals(planned.workerName())
                     && !knownSubAgents.contains(String.valueOf(inputs.get("agentName")))) {
                 continue;
             }
@@ -136,8 +136,8 @@ public class TaskPlanner {
             usedIds.add(id);
             normalized.add(TaskNode.planned(
                     id,
-                    firstNonBlank(planned.goal(), "Use " + planned.capabilityName() + " for the user's goal."),
-                    planned.capabilityName(),
+                    firstNonBlank(planned.goal(), "Use " + planned.workerName() + " for the user's goal."),
+                    planned.workerName(),
                     inputs,
                     planned.dependsOn(),
                     planned.completionCriteria(),
@@ -150,31 +150,31 @@ public class TaskPlanner {
     }
 
     private PlanDraft deterministicSafetyFallback(MarketingRequest request, HarnessContext context) {
-        List<String> requested = requestedCapabilities(request.variables(), context);
+        List<String> requested = requestedWorkers(request.variables(), context);
         if (!requested.isEmpty()) {
             List<PlannedNode> nodes = new ArrayList<>();
             List<String> dependsOn = List.of();
             int index = 1;
-            for (String capability : requested) {
+            for (String worker : requested) {
                 String id = "node_" + index++;
-                nodes.add(new PlannedNode(id, "Execute explicitly requested capability " + capability, capability,
-                        dependsOn, Map.of(), "", 100, "User or caller supplied requested_capabilities."));
+                nodes.add(new PlannedNode(id, "Execute explicitly requested worker " + worker, worker,
+                        dependsOn, Map.of(), "", 100, "User or caller supplied requested_workers."));
                 dependsOn = List.of(id);
             }
-            return new PlanDraft("Planner fallback used explicit requested_capabilities.",
-                    "Summarize capability observations in dependency order.", nodes);
+            return new PlanDraft("Planner fallback used explicit requested_workers.",
+                    "Summarize worker observations in dependency order.", nodes);
         }
-        return context.capabilities().stream()
-                .filter(capability -> allRequiredInputsPresent(capability, request.variables()))
+        return context.workers().stream()
+                .filter(worker -> allRequiredInputsPresent(worker, request.variables()))
                 .findFirst()
-                .map(capability -> new PlanDraft(
-                        "Planner fallback selected a capability whose declared required inputs are present.",
-                        "Return the capability observation.",
-                        List.of(new PlannedNode("node_1", "Execute capability with already supplied inputs.",
-                                capability.name(), List.of(), Map.of(), "", 100,
+                .map(worker -> new PlanDraft(
+                        "Planner fallback selected a worker whose declared required inputs are present.",
+                        "Return the worker observation.",
+                        List.of(new PlannedNode("node_1", "Execute worker with already supplied inputs.",
+                                worker.name(), List.of(), Map.of(), "", 100,
                                 "No language understanding fallback was used."))))
                 .orElseGet(() -> new PlanDraft(
-                        "Planner fallback selected the safest read-only inquiry capability.",
+                        "Planner fallback selected the safest read-only inquiry worker.",
                         "Ask for clarification if the observation is insufficient.",
                         List.of(new PlannedNode("node_1", "Clarify or answer the user's marketing question.",
                                 "rule_inquiry", List.of(), Map.of(), "", 100,
@@ -182,7 +182,7 @@ public class TaskPlanner {
     }
 
     private Map<String, Object> mergedInputs(Map<String, Object> plannedInputs, MarketingRequest request,
-                                             String capabilityName) {
+                                             String workerName) {
         Map<String, Object> inputs = new LinkedHashMap<>();
         if (request.variables() != null) {
             inputs.putAll(request.variables());
@@ -197,7 +197,7 @@ public class TaskPlanner {
         if (request.goals() != null && !request.goals().isEmpty()) {
             inputs.put("goals", request.goals());
         }
-        inputs.put("capability_name", capabilityName);
+        inputs.put("worker_name", workerName);
         return inputs;
     }
 
@@ -206,40 +206,40 @@ public class TaskPlanner {
         builder.append("TASK_GRAPH_PLANNER\n");
         builder.append("You are the natural-language understanding and task-planning kernel for a marketing ");
         builder.append("agent harness. The Java runtime will not interpret the user's wording for you. ");
-        builder.append("You must infer goals, order, dependencies, missing evidence, and capability composition ");
+        builder.append("You must infer goals, order, dependencies, missing evidence, and worker composition ");
         builder.append("from the user's natural language and the current context.\n\n");
         builder.append("Plan a DAG. Independent nodes may have an empty dependsOn array and will be executed ");
         builder.append("in parallel by the harness. Dependent nodes must name prerequisite node ids. ");
-        builder.append("Only choose capabilities from the catalog. Do not invent capability names.\n\n");
-        builder.append("Prefer fine-grained, composable capabilities when the catalog exposes them. Use each ");
-        builder.append("capability's description, type, schemas, preconditions, postconditions, composableWith, ");
+        builder.append("Only choose workers from the catalog. Do not invent worker names.\n\n");
+        builder.append("Prefer fine-grained, composable workers when the catalog exposes them. Use each ");
+        builder.append("worker's description, type, schemas, preconditions, postconditions, composableWith, ");
         builder.append("fallbacks, sideEffects, and approval requirements to decide how to decompose the user goal. ");
-        builder.append("Do not rely on a coarse end-to-end capability when the catalog provides smaller capabilities ");
+        builder.append("Do not rely on a coarse end-to-end worker when the catalog provides smaller workers ");
         builder.append("whose contracts better match the sub-goals and dependency structure. Never use a side-effect ");
-        builder.append("execution capability as a substitute for proposal, preview, validation, or approval; the ");
+        builder.append("execution worker as a substitute for proposal, preview, validation, or approval; the ");
         builder.append("harness will enforce human approval before execution.\n\n");
         builder.append("Use delegate_task for isolated research, evidence inspection, spreadsheet analysis, or ");
         builder.append("other heavy-context work. The planner may choose the sub-agent by name, but must not output ");
         builder.append("skillHints and must not try to prove whether a skill applies. Skills are process knowledge ");
         builder.append("loaded only inside provider or sub-agent execution contexts.\n\n");
-        builder.append("Capability catalog:\n");
-        for (CapabilityDescriptor capability : context.capabilities()) {
-            builder.append("- name=").append(capability.name())
-                    .append("; description=").append(capability.description())
-                    .append("; executionMode=").append(capability.executionMode())
-                    .append("; requiredInputs=").append(capability.requiredInputs())
-                    .append("; inputSchema=").append(capability.inputSchema())
-                    .append("; outputContract=").append(capability.outputContract())
-                    .append("; outputSchema=").append(capability.outputSchema())
-                    .append("; capabilityType=").append(capability.capabilityType())
-                    .append("; permissions=").append(capability.permissions())
-                    .append("; sideEffects=").append(capability.sideEffects())
-                    .append("; requiresHumanApproval=").append(capability.requiresHumanApproval())
-                    .append("; risk=").append(capability.riskLevel())
-                    .append("; composableWith=").append(capability.composableWith())
-                    .append("; fallbacks=").append(capability.fallbackCapabilityNames())
-                    .append("; preconditions=").append(capability.preconditions())
-                    .append("; postconditions=").append(capability.postconditions())
+        builder.append("Worker catalog:\n");
+        for (WorkerDescriptor worker : context.workers()) {
+            builder.append("- name=").append(worker.name())
+                    .append("; description=").append(worker.description())
+                    .append("; executionMode=").append(worker.executionMode())
+                    .append("; requiredInputs=").append(worker.requiredInputs())
+                    .append("; inputSchema=").append(worker.inputSchema())
+                    .append("; outputContract=").append(worker.outputContract())
+                    .append("; outputSchema=").append(worker.outputSchema())
+                    .append("; workerType=").append(worker.workerType())
+                    .append("; permissions=").append(worker.permissions())
+                    .append("; sideEffects=").append(worker.sideEffects())
+                    .append("; requiresHumanApproval=").append(worker.requiresHumanApproval())
+                    .append("; risk=").append(worker.riskLevel())
+                    .append("; composableWith=").append(worker.composableWith())
+                    .append("; fallbacks=").append(worker.fallbackWorkerNames())
+                    .append("; preconditions=").append(worker.preconditions())
+                    .append("; postconditions=").append(worker.postconditions())
                     .append("\n");
         }
         builder.append("\nDelegation agents for delegate_task:\n");
@@ -261,12 +261,12 @@ public class TaskPlanner {
                     {
                       "id": "node_1",
                       "goal": "concrete business sub-goal",
-                      "capabilityName": "one catalog capability name",
+                      "workerName": "one catalog worker name",
                       "dependsOn": [],
                       "inputs": {"question": "preserve or rewrite the relevant user question"},
                       "completionCriteria": "what observation proves this node is done",
                       "priority": 100,
-                      "rationale": "why this capability is appropriate"
+                      "rationale": "why this worker is appropriate"
                     }
                   ]
                 }
@@ -308,7 +308,7 @@ public class TaskPlanner {
                 Current harness context:
                 %s
 
-                Generate a continuation or repaired DAG using only catalog capabilities. Preserve already completed
+                Generate a continuation or repaired DAG using only catalog workers. Preserve already completed
                 business evidence through node inputs when it is needed downstream.
                 """.formatted(
                 request.query() == null ? "" : request.query(),
@@ -316,18 +316,18 @@ public class TaskPlanner {
                 graph == null ? Map.of() : graph.nodeStatuses(),
                 observations == null ? List.of() : observations.stream()
                         .map(observation -> Map.of("taskNodeId", observation.taskNodeId(),
-                                "capability", observation.capabilityName(), "status", observation.status(),
+                                "worker", observation.workerName(), "status", observation.status(),
                                 "summary", observation.summary(), "missingInputs", observation.missingInputs()))
                         .toList(),
                 context.compressedContext());
     }
 
-    private List<String> requestedCapabilities(Map<String, Object> variables, HarnessContext context) {
-        Object requested = variables == null ? null : variables.get("requested_capabilities");
+    private List<String> requestedWorkers(Map<String, Object> variables, HarnessContext context) {
+        Object requested = variables == null ? null : variables.get("requested_workers");
         if (requested == null) {
             return List.of();
         }
-        Set<String> known = context.capabilities().stream().map(CapabilityDescriptor::name).collect(Collectors.toSet());
+        Set<String> known = context.workers().stream().map(WorkerDescriptor::name).collect(Collectors.toSet());
         if (requested instanceof List<?> list) {
             return list.stream().map(String::valueOf).filter(known::contains).distinct().toList();
         }
@@ -338,11 +338,11 @@ public class TaskPlanner {
                 .toList();
     }
 
-    private boolean allRequiredInputsPresent(CapabilityDescriptor capability, Map<String, Object> variables) {
-        if (capability.requiredInputs().isEmpty() || variables == null) {
+    private boolean allRequiredInputsPresent(WorkerDescriptor worker, Map<String, Object> variables) {
+        if (worker.requiredInputs().isEmpty() || variables == null) {
             return false;
         }
-        return capability.requiredInputs().stream()
+        return worker.requiredInputs().stream()
                 .allMatch(input -> variables.get(input) != null && !variables.get(input).toString().isBlank());
     }
 
@@ -406,7 +406,7 @@ public class TaskPlanner {
     private record PlannedNode(
             String id,
             String goal,
-            String capabilityName,
+            String workerName,
             List<String> dependsOn,
             Map<String, Object> inputs,
             String completionCriteria,
@@ -421,3 +421,4 @@ public class TaskPlanner {
         }
     }
 }
+

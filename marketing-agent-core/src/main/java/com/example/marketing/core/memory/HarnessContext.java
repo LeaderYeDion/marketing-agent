@@ -2,20 +2,21 @@ package com.example.marketing.core.memory;
 
 import java.util.List;
 
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 import com.example.marketing.core.agent.SubAgentProfile;
 import com.example.marketing.core.context.MarketingAgentContext;
 
 public record HarnessContext(
         MarketingAgentContext requestContext,
         HarnessMemory memory,
-        List<CapabilityDescriptor> capabilities,
+        List<WorkerDescriptor> workers,
         List<SubAgentProfile> subAgentProfiles,
         String compressedContext
 ) {
     public HarnessContext {
-        capabilities = capabilities == null ? List.of() : List.copyOf(capabilities);
+        workers = workers == null ? List.of() : List.copyOf(workers);
         subAgentProfiles = subAgentProfiles == null ? List.of() : List.copyOf(subAgentProfiles);
         compressedContext = compressedContext == null ? "" : compressedContext;
     }
 }
+

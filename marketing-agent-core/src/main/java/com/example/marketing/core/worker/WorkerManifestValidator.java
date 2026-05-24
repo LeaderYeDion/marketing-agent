@@ -1,4 +1,4 @@
-package com.example.marketing.core.capability;
+package com.example.marketing.core.worker;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,16 +8,16 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
-public class CapabilityManifestValidator {
-    public List<String> validate(List<CapabilityManifestDescriptor> manifests, List<CapabilityProvider> providers) {
+public class WorkerManifestValidator {
+    public List<String> validate(List<WorkerManifestDescriptor> manifests, List<WorkerProvider> providers) {
         List<String> errors = new ArrayList<>();
         Set<String> names = manifests == null ? Set.of() : manifests.stream()
-                .map(CapabilityManifestDescriptor::name)
+                .map(WorkerManifestDescriptor::name)
                 .collect(Collectors.toSet());
         Set<String> providerNames = providers == null ? Set.of() : providers.stream()
-                .map(CapabilityProvider::providerName)
+                .map(WorkerProvider::providerName)
                 .collect(Collectors.toSet());
-        for (CapabilityManifestDescriptor manifest : manifests == null ? List.<CapabilityManifestDescriptor>of()
+        for (WorkerManifestDescriptor manifest : manifests == null ? List.<WorkerManifestDescriptor>of()
                 : manifests) {
             if (manifest.name() == null || manifest.name().isBlank()) {
                 errors.add("CAPABILITY_NAME_EMPTY");
@@ -43,3 +43,4 @@ public class CapabilityManifestValidator {
         return errors;
     }
 }
+

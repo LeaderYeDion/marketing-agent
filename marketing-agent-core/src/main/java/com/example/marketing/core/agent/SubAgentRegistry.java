@@ -20,8 +20,9 @@ public class SubAgentRegistry {
         return Optional.ofNullable(agents.get(name));
     }
 
-    public Map<String, SubAgentCapabilities> capabilities() {
+    public Map<String, SubAgentWorkers> workers() {
         return agents.values().stream()
-                .collect(Collectors.toUnmodifiableMap(SubAgent::name, SubAgent::capabilities));
+                .collect(Collectors.toUnmodifiableMap(SubAgent::name, SubAgent::workers));
     }
 }
+

@@ -1,6 +1,6 @@
 package com.example.marketing.core.middleware;
 
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 import com.example.marketing.core.memory.HarnessContext;
 import com.example.marketing.core.observation.Observation;
 import com.example.marketing.core.task.TaskGraph;
@@ -23,17 +23,17 @@ public interface HarnessMiddleware {
     default void afterPlan(HarnessInvocationContext invocation, TaskGraph graph) {
     }
 
-    default CapabilityCallDecision beforeCapabilityCall(HarnessInvocationContext invocation,
+    default WorkerCallDecision beforeWorkerCall(HarnessInvocationContext invocation,
                                                         TaskGraph graph,
                                                         TaskNode node,
-                                                        CapabilityDescriptor capability) {
-        return CapabilityCallDecision.proceed();
+                                                        WorkerDescriptor worker) {
+        return WorkerCallDecision.proceed();
     }
 
-    default void afterCapabilityCall(HarnessInvocationContext invocation,
+    default void afterWorkerCall(HarnessInvocationContext invocation,
                                      TaskGraph graph,
                                      TaskNode node,
-                                     CapabilityDescriptor capability,
+                                     WorkerDescriptor worker,
                                      Observation observation) {
     }
 
@@ -60,7 +60,8 @@ public interface HarnessMiddleware {
     default void onHumanApprovalRequired(HarnessInvocationContext invocation,
                                          TaskGraph graph,
                                          TaskNode node,
-                                         CapabilityDescriptor capability,
+                                         WorkerDescriptor worker,
                                          Observation observation) {
     }
 }
+

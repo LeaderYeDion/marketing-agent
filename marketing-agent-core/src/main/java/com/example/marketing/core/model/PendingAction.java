@@ -23,7 +23,7 @@ public record PendingAction(
     private static final java.util.Set<String> IMMUTABLE_BINDING_KEYS = java.util.Set.of(
             "task_graph_id",
             "task_node_id",
-            "capability_name",
+            "worker_name",
             "idempotency_key",
             "approval_source"
     );
@@ -61,3 +61,4 @@ public record PendingAction(
                 Map.copyOf(merged), createdAt, expiresAt, Instant.now(), decidedBy, version + 1);
     }
 }
+

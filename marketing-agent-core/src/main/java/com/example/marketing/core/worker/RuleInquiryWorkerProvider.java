@@ -1,4 +1,4 @@
-package com.example.marketing.core.capability;
+package com.example.marketing.core.worker;
 
 import java.util.List;
 import java.util.Map;
@@ -13,10 +13,10 @@ import com.example.marketing.core.model.SubAgentResult;
 import com.example.marketing.core.observation.Observation;
 
 @Service
-public class RuleInquiryCapabilityProvider implements CapabilityProvider {
+public class RuleInquiryWorkerProvider implements WorkerProvider {
     private final InquiryAgent inquiryAgent;
 
-    public RuleInquiryCapabilityProvider(InquiryAgent inquiryAgent) {
+    public RuleInquiryWorkerProvider(InquiryAgent inquiryAgent) {
         this.inquiryAgent = inquiryAgent;
     }
 
@@ -26,26 +26,26 @@ public class RuleInquiryCapabilityProvider implements CapabilityProvider {
     }
 
     @Override
-    public boolean supports(CapabilityDescriptor descriptor) {
+    public boolean supports(WorkerDescriptor descriptor) {
         return descriptor != null && "rule_inquiry".equals(descriptor.name())
                 && providerName().equals(descriptor.provider());
     }
 
     @Override
-    public Observation execute(CapabilityExecutionRequest executionRequest, MarketingRequest marketingRequest) {
+    public Observation execute(WorkerExecutionRequest executionRequest, MarketingRequest marketingRequest) {
         String invocationId = "rule_" + UUID.randomUUID().toString().substring(0, 8);
         SubAgentInvocation invocation = new SubAgentInvocation(
                 invocationId,
                 executionRequest.conversationId(),
                 executionRequest.taskNodeId(),
-                executionRequest.capability().name(),
-                List.of(executionRequest.capability().name()),
+                executionRequest.worker().name(),
+                List.of(executionRequest.worker().name()),
                 executionRequest.userInput(),
                 executionRequest.inputs(),
                 executionRequest.compressedContext(),
                 executionRequest.visibleObjects(),
                 Map.of("provider_mode", providerName(),
-                        "output_contract", executionRequest.capability().outputContract(),
+                        "output_contract", executionRequest.worker().outputContract(),
                         "workspace_refs", executionRequest.workspaceRefs())
         );
         SubAgentResult result = inquiryAgent.run(invocation, marketingRequest);
@@ -54,7 +54,7 @@ public class RuleInquiryCapabilityProvider implements CapabilityProvider {
                 null,
                 executionRequest.runId(),
                 executionRequest.taskNodeId(),
-                executionRequest.capability().name(),
+                executionRequest.worker().name(),
                 result.status(),
                 result.userVisibleSummary(),
                 Map.of("provider_mode", providerName(),
@@ -65,7 +65,7 @@ public class RuleInquiryCapabilityProvider implements CapabilityProvider {
                         "workspace_refs", executionRequest.workspaceRefs()),
                 succeeded ? 0.8 : 0.45,
                 List.of(),
-                executionRequest.capability().riskLevel(),
+                executionRequest.worker().riskLevel(),
                 false,
                 null,
                 result.failure().isEmpty() ? "" : String.valueOf(result.failure().getOrDefault("error_code", "")),
@@ -80,3 +80,4 @@ public class RuleInquiryCapabilityProvider implements CapabilityProvider {
         return value == null ? "" : value.toString();
     }
 }
+

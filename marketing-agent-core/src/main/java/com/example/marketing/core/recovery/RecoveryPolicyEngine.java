@@ -2,7 +2,7 @@ package com.example.marketing.core.recovery;
 
 import org.springframework.stereotype.Service;
 
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 import com.example.marketing.core.observation.Observation;
 import com.example.marketing.core.observation.ObservationEvaluation;
 import com.example.marketing.core.observation.ObservationEvaluator;
@@ -16,10 +16,10 @@ public class RecoveryPolicyEngine {
         this.observationEvaluator = observationEvaluator;
     }
 
-    public RecoveryDecision decide(CapabilityDescriptor capability, TaskNode node, Observation observation) {
-        ObservationEvaluation evaluation = observationEvaluator.evaluate(capability, node, observation);
+    public RecoveryDecision decide(WorkerDescriptor worker, TaskNode node, Observation observation) {
+        ObservationEvaluation evaluation = observationEvaluator.evaluate(worker, node, observation);
         if (evaluation.needsFallback()) {
-            return RecoveryDecision.fallback(capability.fallbackCapabilityNames().getFirst(),
+            return RecoveryDecision.fallback(worker.fallbackWorkerNames().getFirst(),
                     String.join(" ", evaluation.reasons()));
         }
         if (evaluation.needsReplan()) {
@@ -36,8 +36,9 @@ public class RecoveryPolicyEngine {
         return RecoveryDecision.none("No configured recovery path is available.");
     }
 
-    public RecoveryDecision decide(CapabilityDescriptor capability, Observation observation) {
-        return decide(capability, TaskNode.pending(observation.taskNodeId(), "", capability.name(), java.util.Map.of(),
+    public RecoveryDecision decide(WorkerDescriptor worker, Observation observation) {
+        return decide(worker, TaskNode.pending(observation.taskNodeId(), "", worker.name(), java.util.Map.of(),
                 java.util.List.of()), observation);
     }
 }
+

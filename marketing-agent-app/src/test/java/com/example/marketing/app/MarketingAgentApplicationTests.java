@@ -55,7 +55,7 @@ class MarketingAgentApplicationTests {
     }
 
     @Test
-    void harnessBlocksDirectSideEffectCapabilityBeforeApproval() {
+    void harnessBlocksDirectSideEffectWorkerBeforeApproval() {
         MarketingResponse response = marketingAgentService.run(new MarketingRequest(
                 null,
                 "demo-user",
@@ -67,14 +67,14 @@ class MarketingAgentApplicationTests {
                 Map.of("excel_file_path", "E:/tmp/not-needed-before-approval.csv", "activity_id", "A100")
         ));
 
-        assertThat(response.answer()).contains("需要你确认后才能执行");
+        assertThat(response.answer()).contains("Approval is required");
         assertThat(String.valueOf(response.metadata().get("harness"))).contains("waiting_for_approval");
         assertThat(String.valueOf(response.metadata().get("pendingActions"))).contains("confirm_");
         assertThat(String.valueOf(response.metadata().get("harnessTrace"))).contains("hitl_boundary_enforced");
         assertThat(String.valueOf(response.metadata().get("harnessTrace")))
                 .contains("before_model_call")
                 .contains("after_model_call")
-                .contains("before_capability_call")
+                .contains("before_worker_call")
                 .contains("tool_permission_evaluated")
                 .contains("on_human_approval_required")
                 .contains("before_observation_commit")
@@ -89,7 +89,7 @@ class MarketingAgentApplicationTests {
     }
 
     @Test
-    void capabilityCatalogExposesDecomposedEnrollmentCapabilities() {
+    void workerCatalogExposesDecomposedEnrollmentWorkers() {
         MarketingResponse response = marketingAgentService.run(new MarketingRequest(
                 null,
                 "demo-user",
@@ -101,16 +101,16 @@ class MarketingAgentApplicationTests {
                 null
         ));
 
-        String capabilities = String.valueOf(response.metadata().get("capabilities"));
-        assertThat(capabilities).contains("spreadsheet_summarize");
-        assertThat(capabilities).contains("spreadsheet_query_product");
-        assertThat(capabilities).contains("activity_rule_check");
-        assertThat(capabilities).contains("enrollment_preview_create");
-        assertThat(capabilities).contains("enrollment_execute");
-        assertThat(capabilities).contains("notification_copywriting");
-        assertThat(capabilityNames(response)).doesNotContain("activity_enroll");
-        assertThat(capabilityProviders(response)).contains("rule_inquiry_provider");
-        assertThat(capabilityProviders(response)).doesNotContain("inquiry_agent", "activity_enroll_agent");
+        String workers = String.valueOf(response.metadata().get("workers"));
+        assertThat(workers).contains("spreadsheet_summarize");
+        assertThat(workers).contains("spreadsheet_query_product");
+        assertThat(workers).contains("activity_rule_check");
+        assertThat(workers).contains("enrollment_preview_create");
+        assertThat(workers).contains("enrollment_execute");
+        assertThat(workers).contains("notification_copywriting");
+        assertThat(workerNames(response)).doesNotContain("activity_enroll");
+        assertThat(workerProviders(response)).contains("rule_inquiry_provider");
+        assertThat(workerProviders(response)).doesNotContain("inquiry_agent", "activity_enroll_agent");
     }
 
     @Test
@@ -137,9 +137,9 @@ class MarketingAgentApplicationTests {
         ));
 
         String observations = String.valueOf(response.metadata().get("observations"));
-        assertThat(response.answer()).contains("确认后才会执行报名");
+        assertThat(response.answer()).contains("waiting for approval");
         assertThat(observations).contains("waiting_for_approval");
-        assertThat(observations).contains("capability_name=enrollment_execute");
+        assertThat(observations).contains("worker_name=enrollment_execute");
         assertThat(observations).contains("task_graph_id=");
         assertThat(observations).contains("task_node_id=node_1_approved_execution");
         assertThat(observations).contains("idempotency_key=activity_enroll:");
@@ -176,7 +176,7 @@ class MarketingAgentApplicationTests {
                 Map.of("excel_file_path", csv.toString())
         ));
 
-        assertThat(second.answer()).contains("已读取报名表格");
+        assertThat(second.answer()).contains("Summarized spreadsheet");
         assertThat(String.valueOf(second.metadata().get("harnessTrace"))).contains("waiting_graph_resumed");
     }
 
@@ -206,11 +206,11 @@ class MarketingAgentApplicationTests {
             response = marketingAgentService.run(new MarketingRequest(
                     conversationId,
                     "demo-user",
-                    "娲诲姩鎶ュ悕瑙勫垯鏈夊摢浜涳紵 " + i,
-                    "绀剧兢",
-                    "浼氬憳鏈堝崱",
-                    "涓€浜岀嚎鍩庡競鐧介",
-                    List.of("鎷夋柊", "杞寲"),
+                    "What are the activity enrollment rules? " + i,
+                    "wechat",
+                    "membership card",
+                    "city white-collar users",
+                    List.of("enrollment", "rules"),
                     null
             ));
         }
@@ -226,7 +226,7 @@ class MarketingAgentApplicationTests {
         String historyPath = String.valueOf(refs.get("conversation_history"));
         assertThat(agentWorkspace.read(conversationId, historyPath).content())
                 .contains("Archived conversation history")
-                .contains("娲诲姩鎶ュ悕瑙勫垯");
+                .contains("What are the activity enrollment rules");
         assertThat(agentWorkspace.search(conversationId, "/observations", "rule_inquiry")).isNotEmpty();
     }
 
@@ -246,7 +246,7 @@ class MarketingAgentApplicationTests {
                                     {
                                       "id": "node_1",
                                       "goal": "Execute activity enrollment directly.",
-                                      "capabilityName": "enrollment_execute",
+                                      "workerName": "enrollment_execute",
                                       "dependsOn": [],
                                       "inputs": {
                                         "excel_file_path": "E:/tmp/not-needed-before-approval.csv",
@@ -269,7 +269,7 @@ class MarketingAgentApplicationTests {
                                     {
                                       "id": "node_1",
                                       "goal": "Summarize the registration spreadsheet.",
-                                      "capabilityName": "spreadsheet_summarize",
+                                      "workerName": "spreadsheet_summarize",
                                       "dependsOn": [],
                                       "inputs": {},
                                       "completionCriteria": "Spreadsheet summary is produced.",
@@ -289,7 +289,7 @@ class MarketingAgentApplicationTests {
                                     {
                                       "id": "node_1",
                                       "goal": "Create an activity enrollment preview for approval.",
-                                      "capabilityName": "enrollment_preview_create",
+                                      "workerName": "enrollment_preview_create",
                                       "dependsOn": [],
                                       "inputs": {},
                                       "completionCriteria": "A pending action proposal is created.",
@@ -309,7 +309,7 @@ class MarketingAgentApplicationTests {
                                     {
                                       "id": "node_1",
                                       "goal": "Answer a rule question.",
-                                      "capabilityName": "rule_inquiry",
+                                      "workerName": "rule_inquiry",
                                       "dependsOn": ["missing_node"],
                                       "inputs": {"question": "活动规则是什么？"},
                                       "completionCriteria": "A grounded answer is produced.",
@@ -328,14 +328,14 @@ class MarketingAgentApplicationTests {
                                 {
                                   "id": "node_1",
                                   "goal": "Answer the marketing rule question with grounded context.",
-                                  "capabilityName": "rule_inquiry",
+                                  "workerName": "rule_inquiry",
                                   "dependsOn": [],
                                   "inputs": {
                                     "question": "活动报名规则有哪些？"
                                   },
                                   "completionCriteria": "A grounded answer is produced.",
                                   "priority": 100,
-                                  "rationale": "rule_inquiry is the catalog capability for marketing rule questions."
+                                  "rationale": "rule_inquiry is the catalog worker for marketing rule questions."
                                 }
                               ]
                             }
@@ -362,20 +362,20 @@ class MarketingAgentApplicationTests {
     }
 
     @SuppressWarnings("unchecked")
-    private List<String> capabilityNames(MarketingResponse response) {
-        Object capabilities = response.metadata().get("capabilities");
-        assertThat(capabilities).isInstanceOf(List.class);
-        return ((List<Map<String, Object>>) capabilities).stream()
-                .map(capability -> String.valueOf(capability.get("name")))
+    private List<String> workerNames(MarketingResponse response) {
+        Object workers = response.metadata().get("workers");
+        assertThat(workers).isInstanceOf(List.class);
+        return ((List<Map<String, Object>>) workers).stream()
+                .map(worker -> String.valueOf(worker.get("name")))
                 .toList();
     }
 
     @SuppressWarnings("unchecked")
-    private List<String> capabilityProviders(MarketingResponse response) {
-        Object capabilities = response.metadata().get("capabilities");
-        assertThat(capabilities).isInstanceOf(List.class);
-        return ((List<Map<String, Object>>) capabilities).stream()
-                .map(capability -> String.valueOf(capability.get("provider")))
+    private List<String> workerProviders(MarketingResponse response) {
+        Object workers = response.metadata().get("workers");
+        assertThat(workers).isInstanceOf(List.class);
+        return ((List<Map<String, Object>>) workers).stream()
+                .map(worker -> String.valueOf(worker.get("provider")))
                 .toList();
     }
 }

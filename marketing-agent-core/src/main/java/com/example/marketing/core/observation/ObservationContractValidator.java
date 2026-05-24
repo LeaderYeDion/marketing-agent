@@ -6,24 +6,24 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.example.marketing.core.capability.CapabilityDescriptor;
+import com.example.marketing.core.worker.WorkerDescriptor;
 
 @Service
 public class ObservationContractValidator {
-    public List<String> validate(CapabilityDescriptor capability, Observation observation) {
+    public List<String> validate(WorkerDescriptor worker, Observation observation) {
         List<String> errors = new ArrayList<>();
-        if (capability == null || observation == null) {
+        if (worker == null || observation == null) {
             errors.add("OBSERVATION_CONTRACT_INPUT_NULL");
             return errors;
         }
-        if (!capability.name().equals(observation.capabilityName())) {
-            errors.add("OBSERVATION_CAPABILITY_MISMATCH:" + capability.name() + ":" + observation.capabilityName());
+        if (!worker.name().equals(observation.workerName())) {
+            errors.add("OBSERVATION_CAPABILITY_MISMATCH:" + worker.name() + ":" + observation.workerName());
         }
-        if (requiresGrounding(capability) && observation.evidence().isEmpty()
+        if (requiresGrounding(worker) && observation.evidence().isEmpty()
                 && observation.artifacts().isEmpty() && observation.visibleObjects().isEmpty()) {
             errors.add("OBSERVATION_MISSING_GROUNDING:" + observation.id());
         }
-        Object required = capability.outputSchema().get("required");
+        Object required = worker.outputSchema().get("required");
         if (required instanceof Iterable<?> iterable) {
             for (Object item : iterable) {
                 String field = String.valueOf(item);
@@ -45,10 +45,11 @@ public class ObservationContractValidator {
                 || (observation.summary() != null && observation.summary().contains(field));
     }
 
-    private boolean requiresGrounding(CapabilityDescriptor capability) {
-        String type = capability.capabilityType().toLowerCase(java.util.Locale.ROOT);
-        return type.contains("query") || type.contains("delegation") || capability.outputContract().stream()
+    private boolean requiresGrounding(WorkerDescriptor worker) {
+        String type = worker.workerType().toLowerCase(java.util.Locale.ROOT);
+        return type.contains("query") || type.contains("delegation") || worker.outputContract().stream()
                 .anyMatch(field -> field.contains("evidence") || field.contains("citation")
                         || field.contains("rule") || field.contains("summary"));
     }
 }
+
