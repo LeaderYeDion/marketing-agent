@@ -2,7 +2,9 @@
 
 本项目的长期目标是把营销智能体从“业务 demo”演进为一个可治理、可评估、可恢复的 planner-worker harness。
 
-核心原则：
+现阶段最重要的是项目的架构，而不是各模块内部实现细节；内部实现细节会在后续由不同开发人员并行开发和演进，但所有实现都必须服从统一的架构边界、契约、观测和评测标准。
+
+## Core Principles
 
 1. LLM 负责自然语言理解、目标识别、任务拆解和 worker 选择。
 2. Java harness 负责工程约束、权限边界、状态机、执行调度、审计、恢复和评估。
@@ -10,8 +12,9 @@
 4. WorkerProvider 是 worker 的运行时适配器，可以绑定 deterministic code、业务 API、sub-agent、delegation router 或 HITL flow。
 5. Sub-agent 是上下文隔离和任务委派机制，不是所有业务能力的唯一封装方式。
 6. Skill 是按需加载的过程知识包，不是 worker，不是权限入口，也不是 sub-agent 描述。
+7. Eval 是一等架构模块，不是测试补丁；所有 planner、worker、RAG、HITL、recovery、workspace 行为都应该有可评测契约。
 
-## 目标架构
+## Target Architecture
 
 ```text
 User Request
@@ -30,14 +33,18 @@ User Request
           -> delegate_task provider
           -> HITL / approval flow
       -> Observation
-      -> Recovery / Audit / Telemetry / Eval
+      -> Recovery / Audit / Telemetry
+  -> Eval Harness
+      -> planner eval
+      -> worker eval
+      -> RAG eval
+      -> end-to-end scenario eval
+      -> regression dashboard
 ```
-
-Worker 是 planner-worker 架构里的 worker contract。它不是抽象能力集合，也不是一组 skill 的组合描述。每个 `TaskNode.workerName` 必须指向一个可执行、可验证、可审计的 worker manifest。
 
 ## Worker
 
-Worker 描述“系统可以通过哪个受控入口完成某件事”。它给 planner、validator、policy、harness 和 eval 使用。
+Worker 描述“系统可以通过哪个受控入口完成某件事”。每个 `TaskNode.workerName` 必须指向一个可执行、可验证、可审计的 worker manifest。
 
 Worker manifest 应包含：
 
@@ -61,33 +68,9 @@ Worker manifest 应包含：
 
 Worker 不承载长提示词或详细流程知识。详细流程放到 skill package，由执行上下文按需读取。
 
-## WorkerProvider
-
-`WorkerProvider` 是 worker 的运行时适配器。一个 provider 可以支持一个 worker，也可以支持一组强相关 worker。
-
-当前推荐分类：
-
-- 业务 worker provider：例如规则问答、文案生成、报名预览、报名执行。
-- Sub-agent-backed provider：worker contract 稳定，但内部由 sub-agent 完成开放式推理。
-- Delegation provider：`delegate_task`，把任务委派给指定 sub-agent。
-- Deterministic provider：副作用、审批、幂等、审计要求强的动作优先走确定性实现。
-
-这比“所有东西都做成 sub-agent”更稳：sub-agent 解决 context isolation，worker 解决 planner 可见契约、权限治理和 eval。
-
 ## Sub-agent
 
 Sub-agent 是受控的上下文隔离执行体。主 harness 不直接把所有 sub-agent 暴露成自由动作，而是通过 `delegate_task` worker 委派。
-
-每个 sub-agent 需要声明 `SubAgentProfile`：
-
-- `name`
-- `description`
-- `allowedTools`
-- `permissionProfile`
-- `allowedSkills`
-- `maxSteps`
-- `maxTokens`
-- `outputSchema`
 
 Planner 通过 `delegate_task` 的 worker manifest 和 sub-agent profile 判断何时委派，以及委派给谁。Planner 不通过 skill 描述 sub-agent。
 
@@ -97,36 +80,41 @@ Skill 是执行期按需加载的过程知识包。
 
 主 planner 默认不看 skill 全文，也不输出 `skillHints`。Skill metadata 只在 worker runtime、provider 或 sub-agent 的隔离执行上下文中暴露。完整 `SKILL.md` 只有当执行 agent 判断相关时才读取。
 
-Skill 可以描述：
+## Eval Architecture
 
-- 操作流程
-- 领域规则
-- 工具使用方式
-- 输出格式
-- references/scripts/assets
+当前系统已经有 `marketing-agent-eval` 模块和 `GoldenCaseEvaluator`，但它仍然只是最小回归骨架，不能覆盖完整质量评估。后续需要把 eval 升级为独立架构层，用统一数据集、统一 trace、统一指标和统一报告评价系统行为。
 
-Skill 不可以：
+评测至少分为四层：
 
-- 授权副作用
-- 绕过 worker manifest
-- 作为 planner 的执行节点
-- 替代 sub-agent profile
+1. Planner Eval
+   - plan 是否选择了正确 worker。
+   - DAG 是否有合理依赖、并行关系和执行顺序。
+   - 是否正确使用 `delegate_task`。
+   - 是否避免副作用 worker 越权执行。
+   - 是否在缺少输入时进入 clarification / waiting flow。
 
-## 与 Deep Agents 的关系
+2. Worker Eval
+   - worker 输出是否符合 `outputSchema`。
+   - Observation 是否包含必要 evidence、artifacts、workspace refs。
+   - 是否遵守权限、HITL、幂等和 side-effect 边界。
+   - 错误、重试和 recovery 是否符合预期。
 
-deepagents 的主流形态是：
+3. RAG Eval
+   - retrieval relevance：召回内容是否与问题相关。
+   - recall / hit rate：标准答案所需证据是否被召回。
+   - precision：召回内容中无关内容比例是否可控。
+   - groundedness：最终答案是否被检索证据支持。
+   - citation accuracy：引用是否指向真实证据片段。
 
-```text
-main agent
-  -> tools
-  -> task tool
-      -> subagents
-  -> skills
-  -> filesystem
-  -> todos
-```
+4. End-to-End Eval
+   - 用户目标是否被完成。
+   - 最终答案是否正确、完整、可解释。
+   - 中间 worker choice、HITL、workspace、recovery 是否符合架构契约。
+   - 回归版本之间是否出现质量退化。
 
-本项目对应关系：
+Eval 不是只看最终 answer 的字符串匹配，而是要评估 plan、worker choice、dependency、RAG evidence、Observation、HITL、workspace refs、recovery 和最终答案的组合质量。
+
+## Deep Agents Mapping
 
 ```text
 deepagents tool       ~= Worker / WorkerProvider
@@ -137,14 +125,4 @@ deepagents filesystem ~= AgentWorkspace
 deepagents todos      ~= future PlanMemory / Todo
 ```
 
-因此本项目使用 Worker 对齐 planner-worker 和 tool/action surface 的主流心智模型。
-
-## 架构边界
-
-1. Planner 只能选择 worker catalog 中存在的 worker。
-2. Planner 可以选择 `delegate_task`，并通过 `agentName` 指定 sub-agent。
-3. Planner 不读取 skill 全文，不证明 skill 是否适用。
-4. WorkerProvider 负责把 worker contract 转换成具体执行。
-5. 副作用 worker 必须经过 policy、HITL、idempotency、audit 和状态机。
-6. 所有 provider、sub-agent、tool 结果都归一化为 Observation。
-7. Eval 不只评估最终答案，也评估 worker choice、dependency、HITL、observation、workspace refs 和 recovery。
+本项目使用 Worker 对齐 planner-worker 和 tool/action surface 的主流心智模型。
