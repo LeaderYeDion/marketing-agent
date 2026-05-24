@@ -16,7 +16,16 @@
 - 最终答案是否基于证据？
 - HITL、recovery、workspace refs 是否按架构契约工作？
 
-P0 目标不是立刻实现所有指标，而是先定义 eval architecture，使后续不同开发者可以并行实现不同评测器。
+P0 已完成：`marketing-agent-eval` 现在是一等评测架构模块，而不是只做最终答案字符串匹配的 golden case 骨架。现有落点如下：
+
+- `EvalSuite` / `EvalDataset` 统一组织评测套件和数据集。
+- `EvalRunner` 统一执行入口，负责调用被测系统、捕获 trace、调度指标评测器并生成 `EvalReport`。
+- `EvalSystemRunner` 隔离被测系统适配，当前由 `MarketingAgentEvalSystemRunner` 对接 `MarketingAgentService`。
+- `SystemTraceCapture` 将 `MarketingResponse.metadata()` 规范化为 `SystemTrace`，覆盖 planner output、TaskGraph、worker sequence、Observation、evidence / artifacts、workspace refs、RAG retrieved chunks、HITL pending actions、recovery trace、telemetry / audit trace。
+- `MetricEvaluator` 是后续并行扩展指标的统一契约，已内置 `PlannerMetricEvaluator`、`WorkerMetricEvaluator`、`RagMetricEvaluator`、`EndToEndMetricEvaluator` 四层评测器。
+- `GoldenCaseEvaluator` 已退化为兼容适配器，委托新的 `EvalRunner`，不再承载评测架构职责。
+
+P0 的实现边界是先把 eval architecture 固化为稳定契约；具体业务指标的打分细节可继续在对应 evaluator 内演进，但不需要再新增“第一阶段/第二阶段”的架构迁移。
 
 ### P0-1 Eval Harness
 

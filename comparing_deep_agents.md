@@ -41,6 +41,7 @@ Skill 的核心价值是按需知识加载。agent 先看到极简 metadata，�
 | filesystem | `AgentWorkspace` |
 | todo list | future PlanMemory / Todo |
 | middleware stack | future WorkerMiddleware / SkillDisclosureMiddleware / SubAgentDelegationMiddleware |
+| eval harness | `EvalSuite` / `EvalDataset` / `EvalRunner` / `SystemTraceCapture` / `MetricEvaluator` / `EvalReport` |
 
 ## 为什么用 Worker
 

@@ -82,7 +82,9 @@ Skill 是执行期按需加载的过程知识包。
 
 ## Eval Architecture
 
-当前系统已经有 `marketing-agent-eval` 模块和 `GoldenCaseEvaluator`，但它仍然只是最小回归骨架，不能覆盖完整质量评估。后续需要把 eval 升级为独立架构层，用统一数据集、统一 trace、统一指标和统一报告评价系统行为。
+当前系统已经将 `marketing-agent-eval` 升级为独立架构层：`EvalSuite` / `EvalDataset` 负责组织用例，`EvalRunner` 负责统一执行，`SystemTraceCapture` 负责从系统响应中捕获统一 trace，`MetricEvaluator` 负责扩展指标，`EvalReport` 负责输出报告。`GoldenCaseEvaluator` 仅保留为兼容适配器，不再作为评测架构中心。
+
+评测层使用统一数据集、统一 trace、统一指标和统一报告评价系统行为。
 
 评测至少分为四层：
 

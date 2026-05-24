@@ -45,13 +45,30 @@ public class GoldenCaseRepository {
                 values.getOrDefault("expectedAction", ""),
                 values.getOrDefault("expectedSkillName", ""),
                 values.getOrDefault("expectedDelegateTo", ""),
-                csv(values.get("expectedCapabilities")),
+                firstCsv(values, "expectedWorkers", "expectedCapabilities"),
+                csv(values.get("forbiddenWorkers")),
+                dependencies(values.get("expectedDependencies")),
+                values.getOrDefault("expectedDelegateAgent", ""),
+                csv(values.get("expectedMissingInputs")),
                 values.getOrDefault("expectedHarnessStatus", ""),
                 intValue(values.get("minTaskNodes")),
+                stringMap(values.get("expectedObservationStatuses")),
+                csv(values.get("expectedEvidenceKeys")),
+                csv(values.get("expectedArtifactKeys")),
+                csv(values.get("expectedWorkspaceRefs")),
+                csv(values.get("goldEvidenceIds")),
+                csv(values.get("goldAnswerFacts")),
+                csv(values.get("forbiddenFacts")),
+                csv(values.get("expectedCitationPaths")),
                 csv(values.get("mustContain")),
                 csv(values.get("forbidden")),
                 variables(values)
         );
+    }
+
+    private List<String> firstCsv(Map<String, String> values, String first, String fallback) {
+        List<String> items = csv(values.get(first));
+        return items.isEmpty() ? csv(values.get(fallback)) : items;
     }
 
     private List<String> csv(String value) {
@@ -71,6 +88,37 @@ public class GoldenCaseRepository {
         catch (NumberFormatException ex) {
             return 0;
         }
+    }
+
+    private Map<String, List<String>> dependencies(String value) {
+        if (value == null || value.isBlank()) {
+            return Map.of();
+        }
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        for (String entry : value.split(";")) {
+            String[] parts = entry.split("=", 2);
+            if (parts.length == 2 && !parts[0].isBlank()) {
+                result.put(parts[0].trim(), Arrays.stream(parts[1].split("\\+"))
+                        .map(String::trim)
+                        .filter(item -> !item.isBlank())
+                        .toList());
+            }
+        }
+        return result;
+    }
+
+    private Map<String, String> stringMap(String value) {
+        if (value == null || value.isBlank()) {
+            return Map.of();
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        for (String entry : value.split(",")) {
+            String[] parts = entry.split(":", 2);
+            if (parts.length == 2 && !parts[0].isBlank()) {
+                result.put(parts[0].trim(), parts[1].trim());
+            }
+        }
+        return result;
     }
 
     private Map<String, Object> variables(Map<String, String> values) {
