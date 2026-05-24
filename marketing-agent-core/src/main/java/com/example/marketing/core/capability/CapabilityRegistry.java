@@ -5,19 +5,17 @@ import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
-import com.example.marketing.core.skill.SkillRegistry;
-
 @Service
 public class CapabilityRegistry {
-    private final SkillRegistry skillRegistry;
+    private final CapabilityManifestRegistry manifestRegistry;
 
-    public CapabilityRegistry(SkillRegistry skillRegistry) {
-        this.skillRegistry = skillRegistry;
+    public CapabilityRegistry(CapabilityManifestRegistry manifestRegistry) {
+        this.manifestRegistry = manifestRegistry;
     }
 
     public List<CapabilityDescriptor> list() {
-        return skillRegistry.list().stream()
-                .map(CapabilityDescriptor::fromSkill)
+        return manifestRegistry.list().stream()
+                .map(CapabilityManifestDescriptor::toCapabilityDescriptor)
                 .toList();
     }
 

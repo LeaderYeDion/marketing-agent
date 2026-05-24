@@ -12,7 +12,7 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 @Service
-public class SkillRegistry {
+public class SkillRegistry implements SkillKnowledgeLoader {
     private final List<SkillDescriptor> descriptors = loadDescriptors();
 
     public List<SkillDescriptor> list() {
@@ -28,8 +28,25 @@ public class SkillRegistry {
     public Optional<LoadedSkill> load(String skillName) {
         String resourceName = find(skillName)
                 .map(SkillDescriptor::skillResource)
-                .orElse("/skills/" + skillName + "/skill.md");
-        return readResource(resourceName).map(content -> new LoadedSkill(skillName, content));
+                .orElse("/skills/" + skillName + "/SKILL.md");
+        Optional<String> content = readResource(resourceName);
+        if (content.isEmpty() && resourceName.endsWith("/SKILL.md")) {
+            content = readResource(resourceName.replace("/SKILL.md", "/skill.md"));
+        }
+        return content.map(value -> new LoadedSkill(skillName, value));
+    }
+
+    @Override
+    public List<SkillPackageDescriptor> listSummaries() {
+        return descriptors.stream()
+                .map(descriptor -> new SkillPackageDescriptor(descriptor.name(), descriptor.summary(),
+                        descriptor.skillResource(), List.of(descriptor.name())))
+                .toList();
+    }
+
+    @Override
+    public Optional<LoadedSkill> loadSkill(String skillName) {
+        return load(skillName);
     }
 
     private List<SkillDescriptor> loadDescriptors() {
@@ -83,7 +100,8 @@ public class SkillRegistry {
                 csv(values.get("preconditions")),
                 csv(values.get("postconditions")),
                 values.getOrDefault("owner", ""),
-                values.getOrDefault("capabilityType", "")
+                values.getOrDefault("capabilityType", ""),
+                values.getOrDefault("executionMode", "")
         );
     }
 

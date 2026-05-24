@@ -29,8 +29,14 @@ final class AgenticSubAgentSupport {
     static AssistantMessage runReactAgent(String name, String instruction, ChatModel chatModel,
                                           SkillRegistry skillRegistry, List<ToolCallback> tools,
                                           List<Message> messages, String threadId) {
+        return runReactAgent(name, instruction, chatModel, skillRegistry, List.of(), tools, messages, threadId);
+    }
+
+    static AssistantMessage runReactAgent(String name, String instruction, ChatModel chatModel,
+                                          SkillRegistry skillRegistry, List<String> allowedSkills,
+                                          List<ToolCallback> tools, List<Message> messages, String threadId) {
         SpringAiAlibabaSkillRegistryAdapter springSkillRegistry =
-                new SpringAiAlibabaSkillRegistryAdapter(skillRegistry);
+                new SpringAiAlibabaSkillRegistryAdapter(skillRegistry, allowedSkills);
         SkillsAgentHook skillsHook = SkillsAgentHook.builder()
                 .skillRegistry(springSkillRegistry)
                 .groupedTools(Map.of())

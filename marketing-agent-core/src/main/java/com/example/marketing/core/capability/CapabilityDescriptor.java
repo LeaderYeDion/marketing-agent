@@ -21,7 +21,9 @@ public record CapabilityDescriptor(
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema,
         List<String> preconditions,
-        List<String> postconditions
+        List<String> postconditions,
+        String executionMode,
+        List<String> skillRefs
 ) {
     public CapabilityDescriptor {
         requiredInputs = requiredInputs == null ? List.of() : List.copyOf(requiredInputs);
@@ -37,6 +39,8 @@ public record CapabilityDescriptor(
         outputSchema = outputSchema == null ? defaultOutputSchema(outputContract) : Map.copyOf(outputSchema);
         preconditions = preconditions == null ? List.of() : List.copyOf(preconditions);
         postconditions = postconditions == null ? List.of() : List.copyOf(postconditions);
+        executionMode = executionMode == null || executionMode.isBlank() ? "deterministic" : executionMode;
+        skillRefs = skillRefs == null ? List.of() : List.copyOf(skillRefs);
     }
 
     public CapabilityDescriptor(String name, String description, List<String> requiredInputs,
@@ -44,7 +48,8 @@ public record CapabilityDescriptor(
                                 boolean requiresHumanApproval, String riskLevel, String provider,
                                 List<String> composableWith, List<String> fallbackCapabilityNames) {
         this(name, description, requiredInputs, outputContract, permissions, sideEffects, requiresHumanApproval,
-                riskLevel, provider, composableWith, fallbackCapabilityNames, "", null, null, List.of(), List.of());
+                riskLevel, provider, composableWith, fallbackCapabilityNames, "", null, null, List.of(), List.of(),
+                "", List.of());
     }
 
     public static CapabilityDescriptor fromSkill(SkillDescriptor skill) {
@@ -64,7 +69,9 @@ public record CapabilityDescriptor(
                 defaultInputSchema(skill.requiredInputs()),
                 defaultOutputSchema(skill.outputContract().isEmpty() ? skill.canEmit() : skill.outputContract()),
                 skill.preconditions(),
-                skill.postconditions()
+                skill.postconditions(),
+                skill.executionMode(),
+                List.of(skill.name())
         );
     }
 

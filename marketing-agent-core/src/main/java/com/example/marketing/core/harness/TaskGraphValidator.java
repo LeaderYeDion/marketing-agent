@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
+import com.example.marketing.core.agent.SubAgentProfileRegistry;
 import com.example.marketing.core.capability.CapabilityDescriptor;
 import com.example.marketing.core.capability.CapabilityRegistry;
 import com.example.marketing.core.task.TaskGraph;
@@ -18,9 +19,11 @@ import com.example.marketing.core.task.TaskNode;
 @Service
 public class TaskGraphValidator {
     private final CapabilityRegistry capabilityRegistry;
+    private final SubAgentProfileRegistry subAgentProfileRegistry;
 
-    public TaskGraphValidator(CapabilityRegistry capabilityRegistry) {
+    public TaskGraphValidator(CapabilityRegistry capabilityRegistry, SubAgentProfileRegistry subAgentProfileRegistry) {
         this.capabilityRegistry = capabilityRegistry;
+        this.subAgentProfileRegistry = subAgentProfileRegistry;
     }
 
     public TaskGraphValidationResult validateAndRepair(TaskGraph graph) {
@@ -40,12 +43,28 @@ public class TaskGraphValidator {
         }
         validateSideEffectBoundaries(nodes, warnings);
         validateRequiredInputSources(nodes, warnings);
+        validateDelegateTaskAgents(nodes, errors);
         TaskGraph repaired = graph.withNodes(nodes);
         if (repaired.nodes().isEmpty()) {
             errors.add("TASK_GRAPH_HAS_NO_VALID_NODES");
             repaired = repaired.withStatus("failed");
         }
         return new TaskGraphValidationResult(repaired, errors, warnings, repairs);
+    }
+
+    private void validateDelegateTaskAgents(List<TaskNode> nodes, List<String> errors) {
+        for (TaskNode node : nodes) {
+            if (!"delegate_task".equals(node.capabilityName())) {
+                continue;
+            }
+            String agentName = String.valueOf(node.inputs().getOrDefault("agentName", ""));
+            if (agentName.isBlank() || subAgentProfileRegistry.find(agentName).isEmpty()) {
+                errors.add("UNKNOWN_DELEGATION_AGENT:" + node.id() + ":" + agentName);
+            }
+            if (node.inputs().containsKey("skillHints")) {
+                errors.add("SKILL_HINTS_NOT_ALLOWED_IN_P0:" + node.id());
+            }
+        }
     }
 
     private List<TaskNode> removeDuplicateIds(List<TaskNode> nodes, List<String> warnings, List<String> repairs) {

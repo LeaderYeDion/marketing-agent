@@ -22,7 +22,8 @@ public record SkillDescriptor(
         List<String> preconditions,
         List<String> postconditions,
         String owner,
-        String capabilityType
+        String capabilityType,
+        String executionMode
 ) {
     public SkillDescriptor {
         intentHints = intentHints == null ? List.of() : List.copyOf(intentHints);
@@ -37,6 +38,7 @@ public record SkillDescriptor(
         postconditions = postconditions == null ? List.of() : List.copyOf(postconditions);
         owner = owner == null ? "" : owner;
         capabilityType = capabilityType == null ? "" : capabilityType;
+        executionMode = executionMode == null ? "" : executionMode;
     }
 
     public SkillDescriptor(String name, String summary, String entryAgent, List<String> requiredInputs,
@@ -44,7 +46,7 @@ public record SkillDescriptor(
         this(name, "0.0.0", summary, List.of(), entryAgent,
                 requiredInputs == null ? List.of() : List.copyOf(requiredInputs),
                 canEmit == null ? List.of() : List.copyOf(canEmit), List.of(), false, false, "medium",
-                "/skills/" + name + "/skill.md", List.of(), canEmit, List.of(), List.of(), List.of(), List.of(), "",
-                "");
+                "/skills/" + name + "/SKILL.md", List.of(), canEmit, List.of(), List.of(), List.of(), List.of(), "",
+                "", "");
     }
 }

@@ -10,24 +10,31 @@ import com.alibaba.cloud.ai.graph.skills.SkillMetadata;
 
 public class SpringAiAlibabaSkillRegistryAdapter implements com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry {
     private final SkillRegistry delegate;
+    private final java.util.Set<String> allowedSkills;
 
     public SpringAiAlibabaSkillRegistryAdapter(SkillRegistry delegate) {
+        this(delegate, java.util.Set.of());
+    }
+
+    public SpringAiAlibabaSkillRegistryAdapter(SkillRegistry delegate, java.util.Collection<String> allowedSkills) {
         this.delegate = delegate;
+        this.allowedSkills = allowedSkills == null ? java.util.Set.of() : java.util.Set.copyOf(allowedSkills);
     }
 
     @Override
     public Optional<SkillMetadata> get(String skillName) {
-        return delegate.find(skillName).map(this::toMetadata);
+        return allowed(skillName) ? delegate.find(skillName).map(this::toMetadata) : Optional.empty();
     }
 
     @Override
     public List<SkillMetadata> listAll() {
-        return delegate.list().stream().map(this::toMetadata).toList();
+        return delegate.list().stream().filter(descriptor -> allowed(descriptor.name())).map(this::toMetadata)
+                .toList();
     }
 
     @Override
     public boolean contains(String skillName) {
-        return delegate.find(skillName).isPresent();
+        return allowed(skillName) && delegate.find(skillName).isPresent();
     }
 
     @Override
@@ -54,7 +61,7 @@ public class SpringAiAlibabaSkillRegistryAdapter implements com.alibaba.cloud.ai
 
                 Available skills:
                 """);
-        for (SkillDescriptor descriptor : delegate.list()) {
+        for (SkillDescriptor descriptor : delegate.list().stream().filter(item -> allowed(item.name())).toList()) {
             builder.append("- ").append(descriptor.name())
                     .append(": ").append(descriptor.summary())
                     .append(" (entryAgent=").append(descriptor.entryAgent())
@@ -83,5 +90,9 @@ public class SpringAiAlibabaSkillRegistryAdapter implements com.alibaba.cloud.ai
                 .source(getRegistryType())
                 .fullContent(delegate.load(descriptor.name()).map(LoadedSkill::content).orElse(""))
                 .build();
+    }
+
+    private boolean allowed(String skillName) {
+        return allowedSkills.isEmpty() || allowedSkills.contains(skillName);
     }
 }

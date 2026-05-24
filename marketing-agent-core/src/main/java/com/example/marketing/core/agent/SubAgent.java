@@ -11,5 +11,9 @@ public interface SubAgent {
         return SubAgentCapabilities.stateless(java.util.Set.of());
     }
 
+    default SubAgentProfile profile() {
+        return SubAgentProfile.general(name(), "General isolated sub-agent for read-only analysis.");
+    }
+
     SubAgentResult run(SubAgentInvocation invocation, MarketingRequest request);
 }

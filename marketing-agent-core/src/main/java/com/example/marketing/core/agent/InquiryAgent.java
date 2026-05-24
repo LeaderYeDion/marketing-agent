@@ -49,6 +49,20 @@ public class InquiryAgent implements SubAgent {
     }
 
     @Override
+    public SubAgentProfile profile() {
+        return new SubAgentProfile(name(),
+                "Answer marketing rule, promotion, enrollment status, and policy questions with grounded evidence.",
+                "/subagents/inquiry_agent.md",
+                List.of("search_marketing_knowledge", "search_knowledge_base", "read_workspace",
+                        "search_workspace", "read_skill"),
+                List.of("knowledge.retrieve", "workspace.read"),
+                List.of("rule_inquiry"),
+                8,
+                6_000,
+                Map.of("type", "observation", "required", List.of("summary", "confidence", "workspace_refs")));
+    }
+
+    @Override
     public SubAgentResult run(SubAgentInvocation invocation, MarketingRequest request) {
         return run(invocation, MarketingAgentContext.from(request));
     }
@@ -73,6 +87,7 @@ public class InquiryAgent implements SubAgent {
                     inquiryInstruction(),
                     chatModel,
                     skillRegistry,
+                    profile().allowedSkills(),
                     tools.callbacks(),
                     AgenticSubAgentSupport.toMessages(inquirySystemMessage(), invocation, question, List.of()),
                     invocation.conversationId() + ":" + invocation.invocationId());

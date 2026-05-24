@@ -7,6 +7,8 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 import com.example.marketing.api.MarketingRequest;
+import com.example.marketing.core.agent.SubAgentProfile;
+import com.example.marketing.core.agent.SubAgentProfileRegistry;
 import com.example.marketing.core.capability.CapabilityDescriptor;
 import com.example.marketing.core.context.MarketingAgentContext;
 import com.example.marketing.core.model.ContextSummary;
@@ -20,9 +22,11 @@ import com.example.marketing.core.workspace.WorkspaceEntry;
 public class ContextAssembler {
     private static final int RECENT_VISIBLE_MESSAGE_LIMIT = 12;
     private final AgentWorkspace workspace;
+    private final SubAgentProfileRegistry subAgentProfileRegistry;
 
-    public ContextAssembler(AgentWorkspace workspace) {
+    public ContextAssembler(AgentWorkspace workspace, SubAgentProfileRegistry subAgentProfileRegistry) {
         this.workspace = workspace;
+        this.subAgentProfileRegistry = subAgentProfileRegistry;
     }
 
     public HarnessContext assemble(MarketingRequest request, ConversationSession session,
@@ -41,8 +45,9 @@ public class ContextAssembler {
                 workspaceRefs,
                 workspaceEntries
         );
-        return new HarnessContext(MarketingAgentContext.from(request), memory, capabilities,
-                compressedContext(request, memory, capabilities));
+        List<SubAgentProfile> subAgentProfiles = subAgentProfileRegistry.list();
+        return new HarnessContext(MarketingAgentContext.from(request), memory, capabilities, subAgentProfiles,
+                compressedContext(request, memory, capabilities, subAgentProfiles));
     }
 
     private Map<String, Object> refreshConversationHistory(MarketingRequest request, ConversationSession session) {
@@ -86,18 +91,30 @@ public class ContextAssembler {
     }
 
     private String compressedContext(MarketingRequest request, HarnessMemory memory,
-                                     List<CapabilityDescriptor> capabilities) {
+                                     List<CapabilityDescriptor> capabilities,
+                                     List<SubAgentProfile> subAgentProfiles) {
         StringBuilder builder = new StringBuilder();
         builder.append("User goal: ").append(request.query() == null ? "" : request.query()).append("\n");
         builder.append("Capabilities:\n");
         for (CapabilityDescriptor capability : capabilities) {
             builder.append("- ").append(capability.name())
+                    .append(" description=").append(capability.description())
                     .append(" required=").append(capability.requiredInputs())
+                    .append(" executionMode=").append(capability.executionMode())
                     .append(" type=").append(capability.capabilityType())
                     .append(" inputSchema=").append(capability.inputSchema())
                     .append(" outputSchema=").append(capability.outputSchema())
                     .append(" risk=").append(capability.riskLevel())
                     .append(" provider=").append(capability.provider())
+                    .append("\n");
+        }
+        builder.append("Delegation agents for delegate_task:\n");
+        for (SubAgentProfile profile : subAgentProfiles) {
+            builder.append("- ").append(profile.name())
+                    .append(": ").append(profile.description())
+                    .append(" tools=").append(profile.allowedTools())
+                    .append(" permissions=").append(profile.permissionProfile())
+                    .append(" maxSteps=").append(profile.maxSteps())
                     .append("\n");
         }
         builder.append("Visible objects: ").append(memory.visibleObjects().keySet()).append("\n");

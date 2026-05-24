@@ -1101,8 +1101,10 @@ public class MarketingHarness {
         view.put("requiresHumanApproval", capability.requiresHumanApproval());
         view.put("riskLevel", capability.riskLevel());
         view.put("provider", capability.provider());
+        view.put("executionMode", capability.executionMode());
         view.put("composableWith", capability.composableWith());
         view.put("fallbackCapabilityNames", capability.fallbackCapabilityNames());
+        view.put("skillRefs", capability.skillRefs());
         view.put("capabilityType", capability.capabilityType());
         view.put("inputSchema", jsonValue(capability.inputSchema()));
         view.put("outputSchema", jsonValue(capability.outputSchema()));

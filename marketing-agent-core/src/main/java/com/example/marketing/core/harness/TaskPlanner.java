@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 import com.example.marketing.api.MarketingRequest;
+import com.example.marketing.core.agent.SubAgentProfile;
 import com.example.marketing.core.capability.CapabilityDescriptor;
 import com.example.marketing.core.llm.JsonSupport;
 import com.example.marketing.core.llm.LlmGateway;
@@ -113,6 +114,9 @@ public class TaskPlanner {
         Set<String> knownCapabilities = context.capabilities().stream()
                 .map(CapabilityDescriptor::name)
                 .collect(Collectors.toSet());
+        Set<String> knownSubAgents = context.subAgentProfiles().stream()
+                .map(SubAgentProfile::name)
+                .collect(Collectors.toSet());
         List<TaskNode> normalized = new ArrayList<>();
         Set<String> usedIds = new LinkedHashSet<>();
         int index = 1;
@@ -120,12 +124,16 @@ public class TaskPlanner {
             if (!knownCapabilities.contains(planned.capabilityName())) {
                 continue;
             }
+            Map<String, Object> inputs = mergedInputs(planned.inputs(), request, planned.capabilityName());
+            if ("delegate_task".equals(planned.capabilityName())
+                    && !knownSubAgents.contains(String.valueOf(inputs.get("agentName")))) {
+                continue;
+            }
             String id = normalizeId(planned.id(), index);
             while (usedIds.contains(id)) {
                 id = "node_" + index++;
             }
             usedIds.add(id);
-            Map<String, Object> inputs = mergedInputs(planned.inputs(), request, planned.capabilityName());
             normalized.add(TaskNode.planned(
                     id,
                     firstNonBlank(planned.goal(), "Use " + planned.capabilityName() + " for the user's goal."),
@@ -210,10 +218,15 @@ public class TaskPlanner {
         builder.append("whose contracts better match the sub-goals and dependency structure. Never use a side-effect ");
         builder.append("execution capability as a substitute for proposal, preview, validation, or approval; the ");
         builder.append("harness will enforce human approval before execution.\n\n");
+        builder.append("Use delegate_task for isolated research, evidence inspection, spreadsheet analysis, or ");
+        builder.append("other heavy-context work. The planner may choose the sub-agent by name, but must not output ");
+        builder.append("skillHints and must not try to prove whether a skill applies. Skills are process knowledge ");
+        builder.append("loaded only inside provider or sub-agent execution contexts.\n\n");
         builder.append("Capability catalog:\n");
         for (CapabilityDescriptor capability : context.capabilities()) {
             builder.append("- name=").append(capability.name())
                     .append("; description=").append(capability.description())
+                    .append("; executionMode=").append(capability.executionMode())
                     .append("; requiredInputs=").append(capability.requiredInputs())
                     .append("; inputSchema=").append(capability.inputSchema())
                     .append("; outputContract=").append(capability.outputContract())
@@ -227,6 +240,16 @@ public class TaskPlanner {
                     .append("; fallbacks=").append(capability.fallbackCapabilityNames())
                     .append("; preconditions=").append(capability.preconditions())
                     .append("; postconditions=").append(capability.postconditions())
+                    .append("\n");
+        }
+        builder.append("\nDelegation agents for delegate_task:\n");
+        for (SubAgentProfile profile : context.subAgentProfiles()) {
+            builder.append("- name=").append(profile.name())
+                    .append("; description=").append(profile.description())
+                    .append("; allowedTools=").append(profile.allowedTools())
+                    .append("; permissions=").append(profile.permissionProfile())
+                    .append("; maxSteps=").append(profile.maxSteps())
+                    .append("; maxTokens=").append(profile.maxTokens())
                     .append("\n");
         }
         builder.append("\nReturn only JSON with this exact shape:\n");
