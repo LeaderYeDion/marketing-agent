@@ -40,7 +40,7 @@ Skill 的核心价值是按需知识加载。agent 先看到极简 metadata，�
 | skills | Skill Package |
 | filesystem | `AgentWorkspace` |
 | todo list | future PlanMemory / Todo |
-| middleware stack | future WorkerMiddleware / SkillDisclosureMiddleware / SubAgentDelegationMiddleware |
+| middleware stack | future WorkerMiddleware / SkillDisclosureMiddleware / DelegateTaskMiddleware |
 | eval harness | `EvalSuite` / `EvalDataset` / `EvalRunner` / `SystemTraceCapture` / `MetricEvaluator` / `EvalReport` |
 
 ## 为什么用 Worker
@@ -75,7 +75,7 @@ WorkerProvider
 - `RuleInquiryWorkerProvider`: `rule_inquiry`，内部由 `InquiryAgent` 执行。
 - `CopywritingWorkerProvider`: `copywriting` / `notification_copywriting`。
 - `ActivityEnrollmentWorkerProvider`: 表格摘要、商品查询、规则检查、报名预览、报名执行。
-- `SubAgentDelegationWorkerProvider`: `delegate_task`，根据 `agentName` 委派 sub-agent。
+- `DelegateTaskWorkerProvider`: `delegate_task`，根据 `agentName` 委派 sub-agent。
 
 ## 与 deepagents 的主要差距
 
@@ -99,7 +99,7 @@ WorkerProvider
 - 引入 PlanMemory / Todo。
 - 引入 WorkerMiddleware。
 - 引入 SkillDisclosureMiddleware。
-- 引入 SubAgentDelegationMiddleware。
+- 引入 DelegateTaskMiddleware。
 
 长期：
 

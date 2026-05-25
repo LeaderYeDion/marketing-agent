@@ -20,16 +20,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
-public class SubAgentDelegationWorkerProvider implements WorkerProvider {
+public class DelegateTaskWorkerProvider implements WorkerProvider {
     private final SubAgentRegistry subAgentRegistry;
     private final SubAgentProfileRegistry profileRegistry;
     private final AgentWorkspace workspace;
     private final ObjectMapper objectMapper;
 
-    public SubAgentDelegationWorkerProvider(SubAgentRegistry subAgentRegistry,
-                                                SubAgentProfileRegistry profileRegistry,
-                                                AgentWorkspace workspace,
-                                                ObjectMapper objectMapper) {
+    public DelegateTaskWorkerProvider(SubAgentRegistry subAgentRegistry,
+                                      SubAgentProfileRegistry profileRegistry,
+                                      AgentWorkspace workspace,
+                                      ObjectMapper objectMapper) {
         this.subAgentRegistry = subAgentRegistry;
         this.profileRegistry = profileRegistry;
         this.workspace = workspace;
@@ -38,7 +38,7 @@ public class SubAgentDelegationWorkerProvider implements WorkerProvider {
 
     @Override
     public String providerName() {
-        return "subagent_delegation_provider";
+        return "delegate_task_provider";
     }
 
     @Override

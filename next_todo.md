@@ -173,7 +173,7 @@ Worker 是 planner 可调度的执行契约。后续继续完成：
 把 harness 中散落的生命周期逻辑下沉到 middleware：
 
 - `WorkerMiddleware`
-- `SubAgentDelegationMiddleware`
+- `DelegateTaskMiddleware`
 - `SkillDisclosureMiddleware`
 - `PlanMemoryMiddleware`
 - `WorkspaceContextMiddleware`

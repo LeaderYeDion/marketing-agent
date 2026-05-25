@@ -30,7 +30,7 @@ User Request
       -> WorkerProvider
           -> deterministic provider
           -> sub-agent-backed provider
-          -> delegate_task provider
+          -> DelegateTaskWorkerProvider
           -> HITL / approval flow
       -> Observation
       -> Recovery / Audit / Telemetry

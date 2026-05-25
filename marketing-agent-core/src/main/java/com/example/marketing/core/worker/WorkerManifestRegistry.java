@@ -92,7 +92,7 @@ public class WorkerManifestRegistry {
         all.add(new WorkerManifestDescriptor(
                 "delegate_task",
                 "Delegate an isolated read-only analysis task to a bounded sub-agent and return summary plus workspace refs.",
-                "subagent_delegation_provider",
+                "delegate_task_provider",
                 "delegate",
                 List.of("agentName", "task", "expectedOutput"),
                 List.of("summary", "confidence", "workspace_refs"),
